@@ -20,6 +20,8 @@ public sealed class AppDbContext : DbContext
     public DbSet<SignSlotDef> SignSlotDefs => Set<SignSlotDef>();
     public DbSet<UserSignature> UserSignatures => Set<UserSignature>();
     public DbSet<SystemConfig> SystemConfigs => Set<SystemConfig>();
+    public DbSet<DigitalIdentity> DigitalIdentities => Set<DigitalIdentity>();
+    public DbSet<SignEvent> SignEvents => Set<SignEvent>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -106,6 +108,32 @@ public sealed class AppDbContext : DbContext
         b.Entity<SystemConfig>(e =>
         {
             e.HasIndex(x => x.Slot).IsUnique();
+        });
+
+        // DIGITALIDENTITY
+        b.Entity<DigitalIdentity>(e =>
+        {
+            e.Property(x => x.EmpCode).HasMaxLength(100).IsRequired();
+            e.Property(x => x.CertName).HasMaxLength(256).IsRequired();
+            e.Property(x => x.Company).HasMaxLength(128).IsRequired();
+            e.Property(x => x.DisplayName).HasMaxLength(128);
+            e.Property(x => x.Title).HasMaxLength(128);
+            e.Property(x => x.IsActive).HasDefaultValue(true);
+            e.Property(x => x.CreatedAtUtc).IsRequired();
+
+            e.HasIndex(x => new { x.UserId, x.IsActive });
+        });
+
+        // SIGNEVENT
+        b.Entity<SignEvent>(e =>
+        {
+            e.Property(x => x.PdfPathIn).HasMaxLength(1024).IsRequired();
+            e.Property(x => x.PdfPathOut).HasMaxLength(1024).IsRequired();
+            e.Property(x => x.SearchPattern).HasMaxLength(256);
+            e.Property(x => x.VisibleSignatureName).HasMaxLength(128);
+            e.Property(x => x.CreatedAtUtc).IsRequired();
+
+            e.HasIndex(x => new { x.DossierId, x.CreatedAtUtc });
         });
     }
 }
