@@ -1,0 +1,65 @@
+# =========================
+# Git ignore cho VnDocSign (.NET 8 – Clean Architecture)
+# =========================
+
+# Build & bin
+bin/
+obj/
+Debug/
+Release/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# VS temporary files
+.vs/
+*.swp
+*.bak
+*.tmp
+*.log
+*.DS_Store
+
+# User secrets (JWT, DB)
+**/appsettings.Local.json
+**/appsettings.*.local.json
+**/appsettings.*.Development.json
+**/appsettings.*.Production.json
+UserSecrets/
+secret.json
+
+# Database & migrations cache
+*.db
+*.mdf
+*.ldf
+
+# Generated data
+/data/
+wwwroot/uploads/
+Files/
+Logs/
+Temp/
+
+# Backup or test output
+*.bak
+*.zip
+*.7z
+*.tar
+*.gz
+*.rar
+
+# Rider/JetBrains
+.idea/
+*.sln.iml
+
+# Node or npm temp (nếu dùng cho front-end)
+node_modules/
+npm-debug.log
+
+# Other config files
+*.docstates
+*.scc
+
+# =========================
+# End of .gitignore
+# =========================

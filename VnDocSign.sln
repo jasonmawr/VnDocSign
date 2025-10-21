@@ -1,0 +1,40 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.12.35506.116 d17.12
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VnDocSign.Domain", "VnDocSign.Domain\VnDocSign.Domain.csproj", "{01B16743-F82D-4441-A4C2-FEEE42604971}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VnDocSign.Application", "VnDocSign.Application\VnDocSign.Application.csproj", "{4C8B7928-DF59-47D8-9489-65F05B015CB6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VnDocSign.Infrastructure", "VnDocSign.Infrastructure\VnDocSign.Infrastructure.csproj", "{EF0E51B3-F460-4216-A3D7-C694C269621E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VnDocSign.Api", "VnDocSign.Api\VnDocSign.Api.csproj", "{43D7120E-55E8-414A-BD2A-31BF81A8DA28}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{01B16743-F82D-4441-A4C2-FEEE42604971}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{01B16743-F82D-4441-A4C2-FEEE42604971}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{01B16743-F82D-4441-A4C2-FEEE42604971}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{01B16743-F82D-4441-A4C2-FEEE42604971}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4C8B7928-DF59-47D8-9489-65F05B015CB6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4C8B7928-DF59-47D8-9489-65F05B015CB6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4C8B7928-DF59-47D8-9489-65F05B015CB6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4C8B7928-DF59-47D8-9489-65F05B015CB6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EF0E51B3-F460-4216-A3D7-C694C269621E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EF0E51B3-F460-4216-A3D7-C694C269621E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EF0E51B3-F460-4216-A3D7-C694C269621E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EF0E51B3-F460-4216-A3D7-C694C269621E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{43D7120E-55E8-414A-BD2A-31BF81A8DA28}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{43D7120E-55E8-414A-BD2A-31BF81A8DA28}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{43D7120E-55E8-414A-BD2A-31BF81A8DA28}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{43D7120E-55E8-414A-BD2A-31BF81A8DA28}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
