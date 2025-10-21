@@ -18,7 +18,6 @@
   <ItemGroup>
     <Folder Include="Contracts\Dtos\Files\" />
     <Folder Include="Contracts\Interfaces\Files\" />
-    <Folder Include="Contracts\Interfaces\Integration\" />
   </ItemGroup>
 
 </Project>

@@ -17,6 +17,11 @@ using VnDocSign.Infrastructure.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Ensure FileStorage root exists
+var storageRoot = builder.Configuration["FileStorage:Root"] ?? "./data";
+Directory.CreateDirectory(storageRoot);
+
+
 // MySQL
 builder.Services.AddDbContext<AppDbContext>(opt =>
 {
