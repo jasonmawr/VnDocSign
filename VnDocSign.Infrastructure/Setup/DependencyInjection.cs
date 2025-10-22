@@ -1,24 +1,48 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System;
+using VnDocSign.Application.Contracts.Interfaces;
 using VnDocSign.Application.Contracts.Interfaces.Integration;
 using VnDocSign.Application.Contracts.Interfaces.Security;
+using VnDocSign.Application.Contracts.Interfaces.Signing;
 using VnDocSign.Infrastructure.Clients;
 using VnDocSign.Infrastructure.Documents;
+using VnDocSign.Infrastructure.Persistence;
 using VnDocSign.Infrastructure.Security;
+using VnDocSign.Infrastructure.Services;
+using VnDocSign.Infrastructure.Setup.Options;
 
-namespace VnDocSign.Infrastructure.Setup;
-
-public static class DependencyInjection
+namespace VnDocSign.Infrastructure.Setup
 {
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
+    public static class DependencyInjection
     {
-        // Đăng ký Jwt service
-        services.AddScoped<IJwtTokenService, JwtTokenService>();
-        services.AddHttpClient(); // cần cho SsmClient (tương lai gọi SSM thật)
-        services.AddScoped<ISsmClient, SsmClient>();
-        services.AddScoped<IPdfRenderService, PdfRenderService>();
+        public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration config)
+        {
+            // DbContext (MySQL 8.0.36)
+            services.AddDbContext<AppDbContext>(opt =>
+            {
+                var cs = config.GetConnectionString("Default")
+                         ?? throw new InvalidOperationException("Missing ConnectionStrings:Default");
+                var sv = new MySqlServerVersion(new Version(8, 0, 36));
+                opt.UseMySql(cs, sv, o => o.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName));
+            });
 
-        // TODO: Đăng ký DbContext, Repository, Seeder, Services... ở các giai đoạn sau
-        return services;
+            // HttpClient cho SSM
+            services.AddHttpClient("ssm");
+
+            // Clients/Services (đúng tên service hiện có)
+            services.AddScoped<ISsmClient, SsmClient>();                 // Bước SSM live sẽ chi tiết sau
+            services.AddScoped<IPdfRenderService, PdfRenderService>();
+            services.AddScoped<IJwtTokenService, JwtTokenService>();
+            services.AddScoped<ISigningService, SigningService>();
+            services.AddScoped<ISignActivationService, SignActivationService>();
+
+            // Bind options
+            services.Configure<FileStorageOptions>(config.GetSection("FileStorage"));
+            services.Configure<SsmOptions>(config.GetSection("Ssm"));
+
+            return services;
+        }
     }
 }
