@@ -74,9 +74,10 @@ public sealed class SigningService : ISigningService
             ?? throw new InvalidOperationException("Task not found.");
 
         if (!t.IsActivated || t.Status != SignTaskStatus.Pending)
-            throw new InvalidOperationException("Not ready.");
+            throw new InvalidOperationException("Task not ready or already processed.");
+
         if (t.AssigneeId != req.ActorUserId)
-            throw new UnauthorizedAccessException();
+            throw new UnauthorizedAccessException("User not allowed.");
 
         var dossier = t.Dossier ?? throw new InvalidOperationException("Dossier not found.");
 
@@ -84,12 +85,15 @@ public sealed class SigningService : ISigningService
         var di = await _db.Set<DigitalIdentity>()
             .Where(x => x.UserId == req.ActorUserId && x.IsActive)
             .FirstOrDefaultAsync(ct);
+
         if (di is null)
             throw new InvalidOperationException("Tài khoản chưa có DigitalIdentity đang hoạt động. Liên hệ Admin để cấu hình.");
 
         // 2) Lock theo Dossier (tránh race khi nhóm song song cùng ghi file)
         var locker = GetDossierLock(dossier.Id);
         await locker.WaitAsync(ct);
+
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
         try
         {
             // 3) Lấy InputPdf: nếu chưa có bản ký -> render source; nếu có -> dùng bản current
@@ -113,42 +117,39 @@ public sealed class SigningService : ISigningService
             while (File.Exists(GetSignedPath(dossier.Id, version))) version++;
             var outputPdf = GetSignedPath(dossier.Id, version);
 
-            // 5) (Stub) chèn ghi chú GHICHU_* nếu có comment (thực hiện thật ở giai đoạn sau)
+            // 5) (Stub) chèn GHICHU_* nếu có comment
             if (!string.IsNullOrWhiteSpace(req.Comment))
             {
                 _logger.LogInformation("GHICHU_* (stub) - Comment: {Comment}", req.Comment);
-                // TODO: chèn text theo pattern CommentPattern của slot nếu có (phase sau)
             }
 
             // 6) Quyết định chế độ đặt chữ ký
-            // Ưu tiên SearchPattern từ chính SignTask.VisiblePattern; nếu trống thì coi như chưa set (fallback tọa độ khi có trong tương lai)
-            int signLocationType = 1; // 1=SearchPattern, 2=Coordinates (quy ước)
+            int signLocationType = 1; // 1=SearchPattern, 2=Coordinates
             string? searchPattern = t.VisiblePattern;
-            int? page = null; float? posX = null; float? posY = null;
+            int? page = null;
+            float? posX = null;
+            float? posY = null;
 
             if (string.IsNullOrWhiteSpace(searchPattern))
-            {
-                // Nếu về sau bạn bổ sung tọa độ vào SignTask (hoặc join bảng khác), map vào đây:
-                signLocationType = 2; // hiện tại để 2 nhưng không có tọa độ -> SSM stub vẫn copy OK
-            }
+                signLocationType = 2; // fallback tọa độ (chưa dùng)
 
-            // 7) Gọi SSM (stub: copy input -> output)
+            // 7) Gọi SSM thật
             var signReq = new SignPdfRequest(
                 EmpCode: di.EmpCode,
-                Pin: req.Pin ?? string.Empty,     // PIN không lưu DB; đi theo request
+                Pin: req.Pin ?? string.Empty,
                 CertName: di.CertName,
                 Company: di.Company,
                 Title: di.Title ?? string.Empty,
                 Name: di.DisplayName ?? string.Empty,
                 InputPdfPath: inputPdf,
                 OutputPdfPath: outputPdf,
-                SignType: 1,                      // tạm thời quy ước 1 = ký hình ảnh (map thật ở phase sau)
+                SignType: 1,                      // 1 = ký hình ảnh
                 SignLocationType: signLocationType,
                 SearchPattern: searchPattern,
                 Page: page,
                 PositionX: posX,
                 PositionY: posY,
-                BearerToken: null                 // phase sau: nếu gọi SSM thật, truyền token tại đây
+                BearerToken: null                 // có thể truyền token SSM nếu cần
             );
 
             var result = await _ssm.SignPdfAsync(signReq, ct);
@@ -176,30 +177,36 @@ public sealed class SigningService : ISigningService
             if (!result.Success)
             {
                 await _db.SaveChangesAsync(ct); // lưu event lỗi
+                await tx.RollbackAsync(ct);
                 throw new InvalidOperationException("Ký số thất bại: " + (result.Error ?? "unknown"));
             }
 
             // 9) Cập nhật pointer current
             await WriteCurrentSignedAsync(dossier.Id, outputPdf, ct);
 
-            // 10) Cập nhật trạng thái task & dossier (giữ đúng style Phase 1 của bạn)
+            // 10) Cập nhật trạng thái task & dossier
             t.Status = SignTaskStatus.Approved;
             t.DecidedAt = DateTime.UtcNow;
             t.Comment = req.Comment;
 
-            var anyPending = await _db.SignTasks.AnyAsync(x => x.DossierId == t.DossierId && x.Status == SignTaskStatus.Pending, ct);
+            var anyPending = await _db.SignTasks
+                .AnyAsync(x => x.DossierId == t.DossierId && x.Status == SignTaskStatus.Pending, ct);
+
             t.Dossier!.Status = anyPending ? DossierStatus.InProgress : DossierStatus.Approved;
 
             await _db.SaveChangesAsync(ct);
 
-            // 11) Mở bước kế
+            // 11) Mở bước kế (SignActivationService)
             await _activation.RecomputeAsync(t.DossierId, ct);
+
+            await tx.CommitAsync(ct);
         }
         finally
         {
             locker.Release();
         }
     }
+
 
     public async Task RejectAsync(RejectRequest req, CancellationToken ct = default)
     {

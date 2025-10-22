@@ -73,15 +73,23 @@ public sealed class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
-        // SIGNTASK  (gộp TẤT CẢ cấu hình vào đây)
+        // SIGNTASK  (gộp tất cả cấu hình tại đây)
         b.Entity<SignTask>(e =>
         {
             e.HasIndex(x => new { x.DossierId, x.Order }).IsUnique();
-            e.HasOne(x => x.Dossier).WithMany(d => d.SignTasks).HasForeignKey(x => x.DossierId);
-            e.HasOne(x => x.Assignee).WithMany().HasForeignKey(x => x.AssigneeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.DossierId, x.SlotKey, x.Status, x.IsActivated });
+
+            e.HasOne(x => x.Dossier)
+                .WithMany(d => d.SignTasks)
+                .HasForeignKey(x => x.DossierId);
+
+            e.HasOne(x => x.Assignee)
+                .WithMany()
+                .HasForeignKey(x => x.AssigneeId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             e.Property(x => x.Comment).HasMaxLength(1000);
             e.Property(x => x.VisiblePattern).HasMaxLength(64);
-            // e.Property(x => x.SignedPdfAttachmentId) // không cần thêm cấu hình
         });
 
         // USERSIGNATURE
