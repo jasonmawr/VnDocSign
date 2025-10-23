@@ -4,6 +4,8 @@ using VnDocSign.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using VnDocSign.Infrastructure.Persistence;
+using Microsoft.OpenApi.Models;
 
 
 // RoleNames
@@ -15,18 +17,39 @@ builder.Services.AddInfrastructure(builder.Configuration);
 
 // Controllers + Swagger
 builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
 
-// Authorization (RBAC)
 builder.Services.AddAuthorization(options =>
 {
+    // Admin hệ thống
     options.AddPolicy("RequireAdmin", p => p.RequireRole(RoleNames.Admin));
-    options.AddPolicy("RequireClerk", p => p.RequireRole(RoleNames.VanThu));
+
+    // Văn thư (xác nhận mở bước Giám đốc)
+    options.AddPolicy("RequireClerk", p => p.RequireRole(RoleNames.VanThu, RoleNames.Admin));
+
+    // Tất cả những người có thể ký/duyệt trong luồng
     options.AddPolicy("RequireApprover", p => p.RequireRole(
+        RoleNames.ChuyenVien,
         RoleNames.TruongPhong, RoleNames.PhoPhong,
         RoleNames.TruongKhoa, RoleNames.PhoKhoa,
         RoleNames.KeToanTruong, RoleNames.ChuTichCongDoan,
+        RoleNames.DieuDuongTruong, RoleNames.KTVTruong,
+        RoleNames.PhoGiamDoc, RoleNames.GiamDoc
+    ));
+
+    // (Tuỳ chọn) Nhóm lãnh đạo phòng/khoa
+    options.AddPolicy("RequireDeptHead", p => p.RequireRole(
+        RoleNames.TruongPhong, RoleNames.PhoPhong,
+        RoleNames.TruongKhoa, RoleNames.PhoKhoa
+    ));
+
+    // (Tuỳ chọn) Nhóm chức năng phối hợp
+    options.AddPolicy("RequireFunctionalHeads", p => p.RequireRole(
+        RoleNames.KeToanTruong, RoleNames.ChuTichCongDoan,
+        RoleNames.DieuDuongTruong, RoleNames.KTVTruong
+    ));
+
+    // (Tuỳ chọn) Ban Giám đốc
+    options.AddPolicy("RequireBoard", p => p.RequireRole(
         RoleNames.PhoGiamDoc, RoleNames.GiamDoc
     ));
 });
@@ -65,7 +88,7 @@ builder.Services
     });
 
 // CORS
-var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
+var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]?>()
                      ?? new[] { "http://localhost:5173" };
 builder.Services.AddCors(o =>
 {
@@ -76,6 +99,13 @@ builder.Services.AddCors(o =>
         .AllowCredentials());
 });
 
+// Swagger
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "VnDocSign API", Version = "v1" });
+});
+
 var app = builder.Build();
 
 app.UseCors();
@@ -84,6 +114,13 @@ app.UseAuthorization();
 
 app.MapControllers();
 // app.MapHealthChecks("/health"); // nếu có HealthChecks
+app.MapGet("/health", async (IServiceProvider sp) =>
+{
+    using var scope = sp.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var can = await db.Database.CanConnectAsync();
+    return Results.Json(new { status = can ? "Healthy" : "Degraded" });
+});
 
 if (app.Environment.IsDevelopment())
 {

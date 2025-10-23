@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.12.35506.116 d17.12
+VisualStudioVersion = 17.12.35506.116
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VnDocSign.Domain", "VnDocSign.Domain\VnDocSign.Domain.csproj", "{01B16743-F82D-4441-A4C2-FEEE42604971}"
 EndProject
@@ -10,6 +10,23 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VnDocSign.Infrastructure", "VnDocSign.Infrastructure\VnDocSign.Infrastructure.csproj", "{EF0E51B3-F460-4216-A3D7-C694C269621E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VnDocSign.Api", "VnDocSign.Api\VnDocSign.Api.csproj", "{43D7120E-55E8-414A-BD2A-31BF81A8DA28}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ops", "ops", "{220A6C4D-D6AD-4F12-8933-5CEBC7494BCD}"
+	ProjectSection(SolutionItems) = preProject
+		ops\backup\backup.ps1 = ops\backup\backup.ps1
+		ops\backup\cleanup.ps1 = ops\backup\cleanup.ps1
+		ops\backup\restore.ps1 = ops\backup\restore.ps1
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "workflows", "workflows", "{2E9490B0-5673-4D20-BD42-5F9C7D7642BB}"
+	ProjectSection(SolutionItems) = preProject
+		.github\workflows\ci.yml = .github\workflows\ci.yml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docs", "docs", "{18F4581F-A33E-4814-A5C3-6B88FA2673D2}"
+	ProjectSection(SolutionItems) = preProject
+		docs\ops-ci-backup.md = docs\ops-ci-backup.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
