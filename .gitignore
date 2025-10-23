@@ -39,6 +39,7 @@ wwwroot/uploads/
 Files/
 Logs/
 Temp/
+/backups/
 
 # Backup or test output
 *.bak
