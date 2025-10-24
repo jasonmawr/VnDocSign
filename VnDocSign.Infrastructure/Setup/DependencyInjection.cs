@@ -8,6 +8,7 @@ using VnDocSign.Application.Contracts.Interfaces.Security;
 using VnDocSign.Application.Contracts.Interfaces.Signing;
 using VnDocSign.Infrastructure.Clients;
 using VnDocSign.Infrastructure.Documents;
+using VnDocSign.Infrastructure.Documents.Converters;
 using VnDocSign.Infrastructure.Persistence;
 using VnDocSign.Infrastructure.Security;
 using VnDocSign.Infrastructure.Services;
@@ -41,6 +42,15 @@ namespace VnDocSign.Infrastructure.Setup
             // Bind options
             services.Configure<FileStorageOptions>(config.GetSection("FileStorage"));
             services.Configure<SsmOptions>(config.GetSection("Ssm"));
+
+            // PDF Converter (LibreOffice)
+            services.Configure<SofficePdfConverter.Options>(opts =>
+            {
+                opts.SofficePath = config["Pdf:Converter:SofficePath"]; // ví dụ: "soffice"
+                if (int.TryParse(config["Pdf:Converter:TimeoutSeconds"], out var timeout) && timeout > 0)
+                    opts.TimeoutSeconds = timeout;
+            });
+            services.AddSingleton<IPdfConverter, SofficePdfConverter>();
 
             return services;
         }
