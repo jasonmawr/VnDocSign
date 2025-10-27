@@ -10,6 +10,8 @@ using VnDocSign.Domain.Entities.Core;
 using VnDocSign.Domain.Entities.Dossiers;
 using VnDocSign.Domain.Entities.Signing;
 using VnDocSign.Infrastructure.Persistence;
+using System;
+using System.Threading;
 
 namespace VnDocSign.Infrastructure.Services;
 
@@ -124,14 +126,25 @@ public sealed class SigningService : ISigningService
             }
 
             // 6) Quyết định chế độ đặt chữ ký
-            int signLocationType = 1; // 1=SearchPattern, 2=Coordinates
+            //    Mặc định ký theo SearchPattern nếu có (page=1 nếu không cấu hình).
+            //    Nếu KHÔNG có pattern thì hiện tại chưa có toạ độ trong SignTask -> chặn sớm để tránh gửi null xuống SSM.
             string? searchPattern = t.VisiblePattern;
-            int? page = null;
+            int signLocationType;
+            int? page = null; // để null nếu backend SSM tự tìm trang theo pattern; nếu cần, đặt mặc định 1.
             float? posX = null;
             float? posY = null;
 
-            if (string.IsNullOrWhiteSpace(searchPattern))
-                signLocationType = 2; // fallback tọa độ (chưa dùng)
+            if (!string.IsNullOrWhiteSpace(searchPattern))
+            {
+                signLocationType = 1; // 1=SearchPattern
+                if (page is null) page = 1; // page mặc định an toàn khi ký pattern
+            }
+            else
+            {
+                // Ở codebase hiện tại chưa có toạ độ trong SignTask.
+                // Nếu muốn fallback toạ độ, cần lấy từ SignSlotDef (khác bảng) – không có ở đây.
+                throw new InvalidOperationException("Không có VisiblePattern cho slot hiện tại và chưa cấu hình toạ độ fallback.");
+            }
 
             // 7) Gọi SSM thật
             var signReq = new SignPdfRequest(
@@ -143,13 +156,13 @@ public sealed class SigningService : ISigningService
                 Name: di.DisplayName ?? string.Empty,
                 InputPdfPath: inputPdf,
                 OutputPdfPath: outputPdf,
-                SignType: 1,                      // 1 = ký hình ảnh
+                SignType: 1,                      // 1 = ký hình ảnh (giữ nguyên theo SSM)
                 SignLocationType: signLocationType,
                 SearchPattern: searchPattern,
                 Page: page,
                 PositionX: posX,
                 PositionY: posY,
-                BearerToken: null                 // có thể truyền token SSM nếu cần
+                BearerToken: null                 // có thể truyền token SSM nếu cần (_config["Ssm:StaticBearer"])
             );
 
             var result = await _ssm.SignPdfAsync(signReq, ct);
@@ -206,7 +219,6 @@ public sealed class SigningService : ISigningService
             locker.Release();
         }
     }
-
 
     public async Task RejectAsync(RejectRequest req, CancellationToken ct = default)
     {
