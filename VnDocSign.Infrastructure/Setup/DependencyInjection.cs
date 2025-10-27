@@ -29,8 +29,13 @@ namespace VnDocSign.Infrastructure.Setup
                 opt.UseMySql(cs, sv, o => o.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName));
             });
 
-            // HttpClient cho SSM
-            services.AddHttpClient("ssm");
+            // HttpClient cho SSM (lấy timeout từ cấu hình)
+            services.AddHttpClient("ssm", (sp, c) =>
+            {
+                var cfg = sp.GetRequiredService<IConfiguration>();
+                var timeoutSec = cfg.GetValue<int?>("Ssm:TimeoutSeconds") ?? 60;
+                c.Timeout = TimeSpan.FromSeconds(timeoutSec);
+            });
 
             // Clients/Services (đúng tên service hiện có)
             services.AddScoped<ISsmClient, SsmClient>();                 // Bước SSM live sẽ chi tiết sau
@@ -38,6 +43,7 @@ namespace VnDocSign.Infrastructure.Setup
             services.AddScoped<IJwtTokenService, JwtTokenService>();
             services.AddScoped<ISigningService, SigningService>();
             services.AddScoped<ISignActivationService, SignActivationService>();
+            services.AddSingleton<IFileVersioningService, FileVersioningService>();
 
             // Bind options
             services.Configure<FileStorageOptions>(config.GetSection("FileStorage"));

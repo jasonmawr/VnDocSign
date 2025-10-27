@@ -1,7 +1,4 @@
-﻿// ===============================
-// FILE: VnDocSign.Infrastructure/Documents/PdfRenderService.cs
-// ===============================
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -86,56 +83,56 @@ namespace VnDocSign.Infrastructure.Documents
             // ==== Build mapping (tối thiểu GĐ1) ====
             var mapRichText = new Dictionary<string, string?>
             {
-                ["VU_VIEC"] = dossier.Title,
-                ["DON_VI"] = dossier?.CreatedBy?.Department?.Name,
+                ["VU_VIEC"] = dossier.Title ?? string.Empty,
+                ["DON_VI"] = dossier.CreatedBy?.Department?.Name ?? string.Empty,
                 ["KINH_GUI"] = "Ban Giám đốc Viện Y Dược học Dân tộc",
                 ["CANCU_PHAPLY"] = string.Empty,
                 ["NOIDUNG_TRINH"] = string.Empty,
                 ["KIENNGHI_DEXUAT"] = string.Empty,
 
                 // Nhóm 1
-                ["NGUOITRINH_HOTEN"] = GetAssigneeName(dossier, SlotKey.NguoiTrinh),
-                ["LANHDAO_HOTEN"] = GetAssigneeName(dossier, SlotKey.LanhDaoPhong),
-                ["PHONGBAN_LIENQUAN"] = GetAssigneeDept(dossier, SlotKey.DonViLienQuan),
-                ["GHICHUPHONG_LIENQUAN"] = GetComment(dossier, SlotKey.DonViLienQuan),
-                ["HOTEN_LIENQUAN"] = GetAssigneeName(dossier, SlotKey.DonViLienQuan),
+                ["NGUOITRINH_HOTEN"] = GetAssigneeName(dossier!, SlotKey.NguoiTrinh),
+                ["LANHDAO_HOTEN"] = GetAssigneeName(dossier!, SlotKey.LanhDaoPhong),
+                ["PHONGBAN_LIENQUAN"] = GetAssigneeDept(dossier!, SlotKey.DonViLienQuan),
+                ["GHICHUPHONG_LIENQUAN"] = GetComment(dossier!, SlotKey.DonViLienQuan),
+                ["HOTEN_LIENQUAN"] = GetAssigneeName(dossier!, SlotKey.DonViLienQuan),
 
                 // Nhóm 2
-                ["KHTH_SIGN_NAME"] = GetAssigneeName(dossier, SlotKey.KHTH),
-                ["GHICHU_KHTH"] = GetComment(dossier, SlotKey.KHTH),
-                ["HCQT_SIGN_NAME"] = GetAssigneeName(dossier, SlotKey.HCQT),
-                ["GHICHU_HCQT"] = GetComment(dossier, SlotKey.HCQT),
-                ["TCCB_SIGN_NAME"] = GetAssigneeName(dossier, SlotKey.TCCB),
-                ["GHICHU_TCCB"] = GetComment(dossier, SlotKey.TCCB),
-                ["TCKT_SIGN_NAME"] = GetAssigneeName(dossier, SlotKey.TCKT),
-                ["GHICHU_TCKT"] = GetComment(dossier, SlotKey.TCKT),
-                ["CTCD_SIGN_NAME"] = GetAssigneeName(dossier, SlotKey.CTCD),
-                ["GHICHU_CTCD"] = GetComment(dossier, SlotKey.CTCD),
+                ["KHTH_SIGN_NAME"] = GetAssigneeName(dossier!, SlotKey.KHTH),
+                ["GHICHU_KHTH"] = GetComment(dossier!, SlotKey.KHTH),
+                ["HCQT_SIGN_NAME"] = GetAssigneeName(dossier!, SlotKey.HCQT),
+                ["GHICHU_HCQT"] = GetComment(dossier!, SlotKey.HCQT),
+                ["TCCB_SIGN_NAME"] = GetAssigneeName(dossier!, SlotKey.TCCB),
+                ["GHICHU_TCCB"] = GetComment(dossier!, SlotKey.TCCB),
+                ["TCKT_SIGN_NAME"] = GetAssigneeName(dossier!, SlotKey.TCKT),
+                ["GHICHU_TCKT"] = GetComment(dossier!, SlotKey.TCKT),
+                ["CTCD_SIGN_NAME"] = GetAssigneeName(dossier!, SlotKey.CTCD),
+                ["GHICHU_CTCD"] = GetComment(dossier!, SlotKey.CTCD),
 
                 // Nhóm 3
-                ["PGD_NAME_1"] = GetAssigneeName(dossier, SlotKey.PGD1),
-                ["GHICHU_PGD_1"] = GetComment(dossier, SlotKey.PGD1),
-                ["PGD_NAME_2"] = GetAssigneeName(dossier, SlotKey.PGD2),
-                ["GHICHU_PGD_2"] = GetComment(dossier, SlotKey.PGD2),
-                ["PGD_NAME_3"] = GetAssigneeName(dossier, SlotKey.PGD3),
-                ["GHICHU_PGD_3"] = GetComment(dossier, SlotKey.PGD3),
+                ["PGD_NAME_1"] = GetAssigneeName(dossier!, SlotKey.PGD1),
+                ["GHICHU_PGD_1"] = GetComment(dossier!, SlotKey.PGD1),
+                ["PGD_NAME_2"] = GetAssigneeName(dossier!, SlotKey.PGD2),
+                ["GHICHU_PGD_2"] = GetComment(dossier!, SlotKey.PGD2),
+                ["PGD_NAME_3"] = GetAssigneeName(dossier!, SlotKey.PGD3),
+                ["GHICHU_PGD_3"] = GetComment(dossier!, SlotKey.PGD3),
 
                 // Nhóm 4
-                ["GD_NAME"] = GetAssigneeName(dossier, SlotKey.GiamDoc),
-                ["GHICHU_GD"] = GetComment(dossier, SlotKey.GiamDoc),
+                ["GD_NAME"] = GetAssigneeName(dossier!, SlotKey.GiamDoc),
+                ["GHICHU_GD"] = GetComment(dossier!, SlotKey.GiamDoc),
             };
 
             var blocksToHide = new List<string>();
-            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier, SlotKey.DonViLienQuan))) blocksToHide.Add("BLOCK_LIENQUAN");
-            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier, SlotKey.KHTH))) blocksToHide.Add("BLOCK_KHTH");
-            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier, SlotKey.HCQT))) blocksToHide.Add("BLOCK_HCQT");
-            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier, SlotKey.TCCB))) blocksToHide.Add("BLOCK_TCCB");
-            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier, SlotKey.TCKT))) blocksToHide.Add("BLOCK_TCKT");
-            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier, SlotKey.CTCD))) blocksToHide.Add("BLOCK_CTCD");
-            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier, SlotKey.PGD1))) blocksToHide.Add("BLOCK_PGD_1");
-            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier, SlotKey.PGD2))) blocksToHide.Add("BLOCK_PGD_2");
-            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier, SlotKey.PGD3))) blocksToHide.Add("BLOCK_PGD_3");
-            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier, SlotKey.GiamDoc))) blocksToHide.Add("BLOCK_GD");
+            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.DonViLienQuan))) blocksToHide.Add("BLOCK_LIENQUAN");
+            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.KHTH))) blocksToHide.Add("BLOCK_KHTH");
+            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.HCQT))) blocksToHide.Add("BLOCK_HCQT");
+            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.TCCB))) blocksToHide.Add("BLOCK_TCCB");
+            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.TCKT))) blocksToHide.Add("BLOCK_TCKT");
+            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.CTCD))) blocksToHide.Add("BLOCK_CTCD");
+            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.PGD1))) blocksToHide.Add("BLOCK_PGD_1");
+            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.PGD2))) blocksToHide.Add("BLOCK_PGD_2");
+            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.PGD3))) blocksToHide.Add("BLOCK_PGD_3");
+            if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.GiamDoc))) blocksToHide.Add("BLOCK_GD");
 
             // ==== Merge vào DOCX ====
             using (var doc = WordprocessingDocument.Open(srcDocx, true))
@@ -145,11 +142,14 @@ namespace VnDocSign.Infrastructure.Documents
                     OpenXmlTemplateEngine.FillRichTextByAlias(doc, kv.Key, kv.Value ?? string.Empty);
 
                 // Ảnh chữ ký (nếu có)
-                foreach (var slot in new[] { SlotKey.NguoiTrinh, SlotKey.LanhDaoPhong, SlotKey.DonViLienQuan,
-                                             SlotKey.KHTH, SlotKey.HCQT, SlotKey.TCCB, SlotKey.TCKT, SlotKey.CTCD,
-                                             SlotKey.PGD1, SlotKey.PGD2, SlotKey.PGD3, SlotKey.GiamDoc })
+                foreach (var slot in new[]
                 {
-                    var img = await TryGetSignaturePngAsync(dossier, slot, ct);
+                    SlotKey.NguoiTrinh, SlotKey.LanhDaoPhong, SlotKey.DonViLienQuan,
+                    SlotKey.KHTH, SlotKey.HCQT, SlotKey.TCCB, SlotKey.TCKT, SlotKey.CTCD,
+                    SlotKey.PGD1, SlotKey.PGD2, SlotKey.PGD3, SlotKey.GiamDoc
+                })
+                {
+                    var img = await TryGetSignaturePngAsync(dossier!, slot, ct);
                     if (img is null) continue;
 
                     var alias = slot switch
@@ -193,22 +193,26 @@ namespace VnDocSign.Infrastructure.Documents
         }
 
         // ====================== Helpers ======================
-        private static SignTask? FindTask(Dossier dossier, SlotKey key)
-            => dossier.SignTasks.FirstOrDefault(t => t.SlotKey == key);
+        private static SignTask? FindTask(Dossier? dossier, SlotKey key)
+            => dossier?.SignTasks?.FirstOrDefault(t => t.SlotKey == key);
 
-        private static string? GetAssigneeName(Dossier dossier, SlotKey key)
-            => FindTask(dossier, key)?.Assignee?.FullName;
-
-        private static string? GetAssigneeDept(Dossier dossier, SlotKey key)
-            => FindTask(dossier, key)?.Assignee?.Department?.Name;
-
-        private static string? GetComment(Dossier dossier, SlotKey key)
-            => FindTask(dossier, key)?.Comment;
-
-        private async Task<byte[]?> TryGetSignaturePngAsync(Dossier dossier, SlotKey key, CancellationToken ct)
+        private static string? GetAssigneeName(Dossier? dossier, SlotKey key)
         {
             var task = FindTask(dossier, key);
-            if (task?.AssigneeId == null) return null;
+            var name = task?.Assignee?.FullName;
+            return string.IsNullOrWhiteSpace(name) ? null : name;
+        }
+
+        private static string? GetAssigneeDept(Dossier? dossier, SlotKey key)
+            => FindTask(dossier, key)?.Assignee?.Department?.Name;
+
+        private static string? GetComment(Dossier? dossier, SlotKey key)
+            => FindTask(dossier, key)?.Comment;
+
+        private async Task<byte[]?> TryGetSignaturePngAsync(Dossier? dossier, SlotKey key, CancellationToken ct)
+        {
+            var task = FindTask(dossier, key);
+            if (task == null || task.AssigneeId == Guid.Empty) return null;
 
             var sig = await _db.UserSignatures
                 .Where(s => s.UserId == task.AssigneeId)
@@ -217,5 +221,6 @@ namespace VnDocSign.Infrastructure.Documents
 
             return sig?.Data; // byte[] PNG
         }
+
     }
 }
