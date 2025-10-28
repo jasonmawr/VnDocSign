@@ -1,32 +1,25 @@
 ﻿using VnDocSign.Infrastructure.Setup;           // AddInfrastructure()
 using VnDocSign.Domain.Security;
-using VnDocSign.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using VnDocSign.Infrastructure.Persistence;
 using Microsoft.OpenApi.Models;
-
-
-// RoleNames
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Infrastructure
 builder.Services.AddInfrastructure(builder.Configuration);
 
-// Controllers + Swagger
+// Controllers
 builder.Services.AddControllers();
 
+// Authorization Policies
 builder.Services.AddAuthorization(options =>
 {
-    // Admin hệ thống
     options.AddPolicy("RequireAdmin", p => p.RequireRole(RoleNames.Admin));
-
-    // Văn thư (xác nhận mở bước Giám đốc)
     options.AddPolicy("RequireClerk", p => p.RequireRole(RoleNames.VanThu, RoleNames.Admin));
-
-    // Tất cả những người có thể ký/duyệt trong luồng
     options.AddPolicy("RequireApprover", p => p.RequireRole(
         RoleNames.ChuyenVien,
         RoleNames.TruongPhong, RoleNames.PhoPhong,
@@ -35,31 +28,24 @@ builder.Services.AddAuthorization(options =>
         RoleNames.DieuDuongTruong, RoleNames.KTVTruong,
         RoleNames.PhoGiamDoc, RoleNames.GiamDoc
     ));
-
-    // (Tuỳ chọn) Nhóm lãnh đạo phòng/khoa
     options.AddPolicy("RequireDeptHead", p => p.RequireRole(
         RoleNames.TruongPhong, RoleNames.PhoPhong,
         RoleNames.TruongKhoa, RoleNames.PhoKhoa
     ));
-
-    // (Tuỳ chọn) Nhóm chức năng phối hợp
     options.AddPolicy("RequireFunctionalHeads", p => p.RequireRole(
         RoleNames.KeToanTruong, RoleNames.ChuTichCongDoan,
         RoleNames.DieuDuongTruong, RoleNames.KTVTruong
     ));
-
-    // (Tuỳ chọn) Ban Giám đốc
     options.AddPolicy("RequireBoard", p => p.RequireRole(
         RoleNames.PhoGiamDoc, RoleNames.GiamDoc
     ));
 });
 
-// JWT (đọc key từ ENV trước, dev fallback)
+// JWT
 var jwtKey = Environment.GetEnvironmentVariable("VN_DOCSIGN_JWT_KEY")
              ?? builder.Configuration["Jwt:Key"]
              ?? throw new InvalidOperationException("Missing JWT key (ENV VN_DOCSIGN_JWT_KEY or Jwt:Key)");
 
-// AUTH (JWT)
 var keyBytes = Encoding.UTF8.GetBytes(jwtKey);
 
 builder.Services
@@ -70,18 +56,14 @@ builder.Services
     })
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = false;      // DEV có thể false; PROD nên true nếu có HTTPS reverse proxy
+        options.RequireHttpsMetadata = false; // DEV
         options.SaveToken = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
-
-            // Hệ thống hiện tại chưa dùng Issuer/Audience chuẩn hoá → tắt validate 2 mục này
             ValidateIssuer = false,
             ValidateAudience = false,
-
-            // Bắt buộc kiểm lifetime (hết hạn là từ chối), cho lệch giờ nhẹ
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(2)
         };
@@ -99,21 +81,43 @@ builder.Services.AddCors(o =>
         .AllowCredentials());
 });
 
-// Swagger
+// Swagger + Bearer
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "VnDocSign API", Version = "v1" });
+
+    var jwtScheme = new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Description = "Nhập Bearer {token}",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+    };
+    c.AddSecurityDefinition("Bearer", jwtScheme);
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement { { jwtScheme, Array.Empty<string>() } });
 });
 
 var app = builder.Build();
+
+// (DEV) Auto-migrate để tránh lỗi bảng chưa tạo
+if (app.Environment.IsDevelopment())
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
 
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-// app.MapHealthChecks("/health"); // nếu có HealthChecks
+
+// /health
 app.MapGet("/health", async (IServiceProvider sp) =>
 {
     using var scope = sp.CreateScope();
