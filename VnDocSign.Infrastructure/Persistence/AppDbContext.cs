@@ -25,6 +25,7 @@ public sealed class AppDbContext : DbContext
     public DbSet<SignEvent> SignEvents => Set<SignEvent>();
     public DbSet<Template> Templates => Set<Template>();
     public DbSet<TemplateVersion> TemplateVersions => Set<TemplateVersion>();
+    public DbSet<DossierContent> DossierContents => Set<DossierContent>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -174,6 +175,24 @@ public sealed class AppDbContext : DbContext
             e.HasOne(x => x.CreatedBy)
                 .WithMany()
                 .HasForeignKey(x => x.CreatedById)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        //DOSSIER CONTENT
+        b.Entity<DossierContent>(e =>
+        {
+            e.HasIndex(x => x.DossierId).IsUnique();                  // 1 dossier ↔ 1 content
+            e.Property(x => x.TemplateCode).HasMaxLength(64);
+            e.Property(x => x.DataJson).HasMaxLength(8000).IsRequired();
+
+            e.HasOne(x => x.Dossier)
+                .WithOne()                                            // không vòng lặp navigation
+                .HasForeignKey<DossierContent>(x => x.DossierId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.UpdatedBy)
+                .WithMany()
+                .HasForeignKey(x => x.UpdatedById)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }

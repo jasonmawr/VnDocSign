@@ -98,6 +98,7 @@ namespace VnDocSign.Infrastructure.Setup
             services.AddScoped<ISigningService, SigningService>();
             services.AddScoped<ISignActivationService, SignActivationService>();
             services.AddScoped<ITemplateService, TemplateService>();
+            services.AddScoped<IDossierContentService, DossierContentService>();
 
             // === Options binding ===
             services.Configure<FileStorageOptions>(config.GetSection("FileStorage"));
