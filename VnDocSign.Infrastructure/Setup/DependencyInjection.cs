@@ -11,6 +11,7 @@ using VnDocSign.Application.Contracts.Interfaces.Departments;
 using VnDocSign.Application.Contracts.Interfaces.Dossiers;
 using VnDocSign.Application.Contracts.Interfaces.Signatures;
 using VnDocSign.Application.Contracts.Interfaces.Users;
+using VnDocSign.Application.Contracts.Interfaces.Documents;
 
 using VnDocSign.Infrastructure.Clients;
 using VnDocSign.Infrastructure.Documents;
@@ -96,6 +97,7 @@ namespace VnDocSign.Infrastructure.Setup
             services.AddScoped<ISignatureService, SignatureService>();
             services.AddScoped<ISigningService, SigningService>();
             services.AddScoped<ISignActivationService, SignActivationService>();
+            services.AddScoped<ITemplateService, TemplateService>();
 
             // === Options binding ===
             services.Configure<FileStorageOptions>(config.GetSection("FileStorage"));
