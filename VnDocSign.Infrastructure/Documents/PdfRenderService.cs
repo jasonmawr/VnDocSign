@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json;                                      // GĐ4: dùng để đọc DataJson
 using DocumentFormat.OpenXml.Packaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -82,6 +83,20 @@ namespace VnDocSign.Infrastructure.Documents
 
             File.Copy(templatePath, srcDocx, overwrite: true);
 
+            // ===== GĐ4: Load DossierContent (nếu có) để ghi đè alias =====
+            var aliasFromDb = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+            var dc = await _db.DossierContents.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.DossierId == dossierId, ct);
+            if (dc != null && !string.IsNullOrWhiteSpace(dc.DataJson))
+            {
+                try
+                {
+                    aliasFromDb = JsonSerializer.Deserialize<Dictionary<string, string?>>(dc.DataJson)
+                                  ?? new Dictionary<string, string?>();
+                }
+                catch { /* ignore malformed json */ }
+            }
+
             // ==== Build mapping (tối thiểu GĐ1) ====
             var mapRichText = new Dictionary<string, string?>
             {
@@ -124,6 +139,10 @@ namespace VnDocSign.Infrastructure.Documents
                 ["GHICHU_GD"] = GetComment(dossier!, SlotKey.GiamDoc),
             };
 
+            // ===== GĐ4: Ghi đè alias từ DB (nếu có) =====
+            foreach (var kv in aliasFromDb)
+                mapRichText[kv.Key] = kv.Value ?? string.Empty;
+
             var blocksToHide = new List<string>();
             if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.DonViLienQuan))) blocksToHide.Add("BLOCK_LIENQUAN");
             if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.KHTH))) blocksToHide.Add("BLOCK_KHTH");
@@ -136,14 +155,11 @@ namespace VnDocSign.Infrastructure.Documents
             if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.PGD3))) blocksToHide.Add("BLOCK_PGD_3");
             if (string.IsNullOrWhiteSpace(GetAssigneeName(dossier!, SlotKey.GiamDoc))) blocksToHide.Add("BLOCK_GD");
 
-            // ==== Merge vào DOCX ====
             using (var doc = WordprocessingDocument.Open(srcDocx, true))
             {
-                // RichText
                 foreach (var kv in mapRichText)
                     OpenXmlTemplateEngine.FillRichTextByAlias(doc, kv.Key, kv.Value ?? string.Empty);
 
-                // Ảnh chữ ký (nếu có)
                 foreach (var slot in new[]
                 {
                     SlotKey.NguoiTrinh, SlotKey.LanhDaoPhong, SlotKey.DonViLienQuan,
@@ -175,12 +191,10 @@ namespace VnDocSign.Infrastructure.Documents
                         OpenXmlTemplateEngine.SetImageByAlias(doc, alias, img);
                 }
 
-                // Ẩn các BLOCK_* trống
                 foreach (var b in blocksToHide.Distinct(StringComparer.OrdinalIgnoreCase))
                     OpenXmlTemplateEngine.RemoveBlockByAlias(doc, b);
-            } // đóng using (doc)
+            }
 
-            // ==== Convert → PDF (soffice) ====
             var outPdf = await _pdfConverter.ConvertDocxToPdfAsync(srcDocx, ct);
             if (!File.Exists(outPdf))
                 throw new InvalidOperationException("Failed to convert PDF");
@@ -223,6 +237,5 @@ namespace VnDocSign.Infrastructure.Documents
 
             return sig?.Data; // byte[] PNG
         }
-
     }
 }
