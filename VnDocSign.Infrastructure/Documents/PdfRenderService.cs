@@ -62,7 +62,9 @@ namespace VnDocSign.Infrastructure.Documents
         private async Task<(string DocxPath, string PdfPath)> RenderCoreAsync(Guid dossierId, CancellationToken ct)
         {
             var dossier = await _db.Dossiers
-                .Include(x => x.SignTasks).ThenInclude(t => t.Assignee).ThenInclude(u => u.Department)
+                .Include(x => x.SignTasks)
+                .ThenInclude(t => t.Assignee)
+                .ThenInclude(u => u!.Department)
                 .FirstOrDefaultAsync(x => x.Id == dossierId, ct)
                 ?? throw new InvalidOperationException($"Dossier {dossierId} not found");
 

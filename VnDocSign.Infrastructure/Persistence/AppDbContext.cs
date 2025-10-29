@@ -2,6 +2,7 @@
 using VnDocSign.Domain.Entities;
 using VnDocSign.Domain.Entities.Config;
 using VnDocSign.Domain.Entities.Core;
+using VnDocSign.Domain.Entities.Documents;
 using VnDocSign.Domain.Entities.Dossiers;
 using VnDocSign.Domain.Entities.Signing;
 
@@ -22,6 +23,8 @@ public sealed class AppDbContext : DbContext
     public DbSet<SystemConfig> SystemConfigs => Set<SystemConfig>();
     public DbSet<DigitalIdentity> DigitalIdentities => Set<DigitalIdentity>();
     public DbSet<SignEvent> SignEvents => Set<SignEvent>();
+    public DbSet<Template> Templates => Set<Template>();
+    public DbSet<TemplateVersion> TemplateVersions => Set<TemplateVersion>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -142,6 +145,36 @@ public sealed class AppDbContext : DbContext
             e.Property(x => x.CreatedAtUtc).IsRequired();
 
             e.HasIndex(x => new { x.DossierId, x.CreatedAtUtc });
+        });
+
+        // TEMPLATE
+        b.Entity<Template>(e =>
+        {
+            e.HasIndex(x => x.Code).IsUnique();
+            e.Property(x => x.Code).HasMaxLength(64).IsRequired();
+            e.Property(x => x.Name).HasMaxLength(256).IsRequired();
+            e.HasOne(x => x.CreatedBy)
+                .WithMany()
+                .HasForeignKey(x => x.CreatedById)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<TemplateVersion>(e =>
+        {
+            e.HasIndex(x => new { x.TemplateId, x.VersionNo }).IsUnique();
+            e.Property(x => x.FileNameDocx).HasMaxLength(256).IsRequired();
+            e.Property(x => x.FileNamePdf).HasMaxLength(256).IsRequired();
+            e.Property(x => x.VisiblePatternsJson).HasMaxLength(4000).IsRequired();
+
+            e.HasOne(x => x.Template)
+                .WithMany(t => t.Versions)
+                .HasForeignKey(x => x.TemplateId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            e.HasOne(x => x.CreatedBy)
+                .WithMany()
+                .HasForeignKey(x => x.CreatedById)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
