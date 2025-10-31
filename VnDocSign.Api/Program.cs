@@ -1,21 +1,23 @@
-﻿using VnDocSign.Infrastructure.Setup;           // AddInfrastructure()
-using VnDocSign.Domain.Security;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
+﻿using System;
+using System.IO;
 using System.Text;
-using VnDocSign.Infrastructure.Persistence;
-using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using VnDocSign.Domain.Security;
+using VnDocSign.Infrastructure.Persistence;
+using VnDocSign.Infrastructure.Setup;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Infrastructure
+// ========== Infrastructure ==========
 builder.Services.AddInfrastructure(builder.Configuration);
 
-// Controllers
+// ========== Controllers ==========
 builder.Services.AddControllers();
 
-// Authorization Policies
+// ========== Authorization Policies ==========
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("RequireAdmin", p => p.RequireRole(RoleNames.Admin));
@@ -41,7 +43,7 @@ builder.Services.AddAuthorization(options =>
     ));
 });
 
-// JWT
+// ========== JWT ==========
 var jwtKey = Environment.GetEnvironmentVariable("VN_DOCSIGN_JWT_KEY")
              ?? builder.Configuration["Jwt:Key"]
              ?? throw new InvalidOperationException("Missing JWT key (ENV VN_DOCSIGN_JWT_KEY or Jwt:Key)");
@@ -56,7 +58,7 @@ builder.Services
     })
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = false; // DEV
+        options.RequireHttpsMetadata = false; // DEV; bật true khi lên prod qua HTTPS reverse proxy
         options.SaveToken = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -69,7 +71,7 @@ builder.Services
         };
     });
 
-// CORS
+// ========== CORS ==========
 var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]?>()
                      ?? new[] { "http://localhost:5173" };
 builder.Services.AddCors(o =>
@@ -81,12 +83,22 @@ builder.Services.AddCors(o =>
         .AllowCredentials());
 });
 
-// Swagger + Bearer
+// ========== Swagger ==========
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "VnDocSign API", Version = "v1" });
 
+    // Tránh xung đột schema khi có nhiều lớp trùng tên (chuẩn thực tế, không vá tạm)
+    c.CustomSchemaIds(t => t.FullName);
+
+    // Chỉ include XML docs nếu file tồn tại để không ném lỗi khi chưa bật GenerateDocumentationFile
+    var apiXml = Path.Combine(AppContext.BaseDirectory, "VnDocSign.Api.xml");
+    if (File.Exists(apiXml)) c.IncludeXmlComments(apiXml, includeControllerXmlComments: true);
+    var appXml = Path.Combine(AppContext.BaseDirectory, "VnDocSign.Application.xml");
+    if (File.Exists(appXml)) c.IncludeXmlComments(appXml, includeControllerXmlComments: true);
+
+    // Bearer security
     var jwtScheme = new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -103,7 +115,7 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// (DEV) Auto-migrate để tránh lỗi bảng chưa tạo
+// (DEV) Auto-migrate để tránh lỗi bảng chưa tạo khi chạy local
 if (app.Environment.IsDevelopment())
 {
     using var scope = app.Services.CreateScope();
@@ -111,13 +123,22 @@ if (app.Environment.IsDevelopment())
     db.Database.Migrate();
 }
 
+// Middleware order
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Swagger chỉ bật ở DEV
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+// Map controllers
 app.MapControllers();
 
-// /health
+// /health endpoint
 app.MapGet("/health", async (IServiceProvider sp) =>
 {
     using var scope = sp.CreateScope();
@@ -125,11 +146,5 @@ app.MapGet("/health", async (IServiceProvider sp) =>
     var can = await db.Database.CanConnectAsync();
     return Results.Json(new { status = can ? "Healthy" : "Degraded" });
 });
-
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
 
 app.Run();

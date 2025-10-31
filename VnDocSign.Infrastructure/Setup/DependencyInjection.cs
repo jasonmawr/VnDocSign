@@ -20,6 +20,7 @@ using VnDocSign.Infrastructure.Persistence;
 using VnDocSign.Infrastructure.Security;
 using VnDocSign.Infrastructure.Services;
 using VnDocSign.Infrastructure.Setup.Options;
+using VnDocSign.Application.Contracts.Interfaces.DigitalIdentities;
 
 namespace VnDocSign.Infrastructure.Setup
 {
@@ -99,6 +100,7 @@ namespace VnDocSign.Infrastructure.Setup
             services.AddScoped<ISignActivationService, SignActivationService>();
             services.AddScoped<ITemplateService, TemplateService>();
             services.AddScoped<IDossierContentService, DossierContentService>();
+            services.AddScoped<IDigitalIdentityService, DigitalIdentityService>();
 
             // === Options binding ===
             services.Configure<FileStorageOptions>(config.GetSection("FileStorage"));
