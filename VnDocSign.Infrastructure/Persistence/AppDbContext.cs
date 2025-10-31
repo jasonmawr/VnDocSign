@@ -133,6 +133,14 @@ public sealed class AppDbContext : DbContext
             e.Property(x => x.IsActive).HasDefaultValue(true);
             e.Property(x => x.CreatedAtUtc).IsRequired();
 
+            // NEW (GĐ5.1)
+            e.Property(x => x.Provider).HasMaxLength(64);
+            e.Property(x => x.SerialNo).HasMaxLength(128);
+            e.Property(x => x.Issuer).HasMaxLength(256);
+            e.Property(x => x.Subject).HasMaxLength(256);
+            e.Property(x => x.NotBefore);
+            e.Property(x => x.NotAfter);
+
             e.HasIndex(x => new { x.UserId, x.IsActive });
         });
 
@@ -144,8 +152,12 @@ public sealed class AppDbContext : DbContext
             e.Property(x => x.SearchPattern).HasMaxLength(256);
             e.Property(x => x.VisibleSignatureName).HasMaxLength(128);
             e.Property(x => x.CreatedAtUtc).IsRequired();
+            e.Property(x => x.Error).HasMaxLength(1000);
 
             e.HasIndex(x => new { x.DossierId, x.CreatedAtUtc });
+            // thêm index phục vụ lọc nhanh theo các màn hình audit
+            e.HasIndex(x => new { x.DossierId, x.CreatedAtUtc });
+            e.HasIndex(x => new { x.ActorUserId, x.CreatedAtUtc });
         });
 
         // TEMPLATE

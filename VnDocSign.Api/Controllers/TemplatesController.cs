@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using VnDocSign.Api.Models;
 using VnDocSign.Application.Contracts.Dtos.Templates;
 using VnDocSign.Application.Contracts.Interfaces.Documents;
 
@@ -24,16 +25,26 @@ namespace VnDocSign.Api.Controllers
 
         [HttpPost("upload")]
         [RequestSizeLimit(100_000_000)] // 100MB
+        [Consumes("multipart/form-data")]
+        [ProducesResponseType(typeof(TemplateUploadResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
         public async Task<ActionResult<TemplateUploadResultDto>> Upload(
-            [FromForm] string TemplateCode, [FromForm] string? Name,
-            [FromForm] string? Notes, [FromForm] IFormFile file,
+            [FromForm] TemplateUploadForm form,
             CancellationToken ct)
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            var uid = Guid.TryParse(userId, out var g) ? g : (Guid?)null;
+            // Lấy user Id từ token (nếu có)
+            var userIdStr = User?.FindFirstValue(ClaimTypes.NameIdentifier);
+            Guid? userId = Guid.TryParse(userIdStr, out var g) ? g : (Guid?)null;
 
-            var meta = new TemplateUploadRequest(TemplateCode, Name, Notes);
-            var result = await _svc.UploadAsync(meta, file, uid, ct);
+            // Map sang request của Application layer
+            var req = new TemplateUploadRequest(
+                form.TemplateCode,
+                form.Name,
+                form.Notes
+            );
+
+            // Gọi service lưu metadata + file
+            var result = await _svc.UploadAsync(req, form.File, userId, ct);
             return Ok(result);
         }
 
