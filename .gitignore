@@ -1,66 +1,134 @@
-# =========================
-# Git ignore cho VnDocSign (.NET 8 – Clean Architecture)
-# =========================
+############################
+# OS-level junk
+############################
+.DS_Store
+Thumbs.db
 
-# Build & bin
+############################
+# IDE / Editor
+############################
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+_ReSharper.Caches/
+*.DotSettings.user
+# VS Code – thường nên giữ settings, nhưng bỏ các cache
+.vscode/*.db
+.vscode/.cache/
+.vscode/ipch
+
+############################
+# .NET build artifacts
+############################
 bin/
 obj/
-Debug/
-Release/
-.vscode/
-.idea/
-*.user
-*.suo
+[Bb]uild/
+[Bb]in/
+[Oo]bj/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+*.cov
+*.nupkg
+*.snupkg
 
-# VS temporary files
-.vs/
-*.swp
-*.bak
-*.tmp
+# Nếu dự án nào còn dùng packages.config (hiếm)
+packages/
+# Generated code thường không commit (tuỳ dự án)
+*.g.cs
+*.generated.cs
+
+############################
+# Logs / temp / runtime
+############################
+logs/
 *.log
-*.DS_Store
+temp/
+tmp/
+**/out/
+**/output/
+**/Artifacts/
 
-# User secrets (JWT, DB)
-**/appsettings.Local.json
-**/appsettings.*.local.json
-**/appsettings.*.Development.json
-**/appsettings.*.Production.json
-UserSecrets/
-secret.json
+# Serilog (nếu ghi ra file)
+VnDocSign.Api/serilog-*.log
 
-# Database & migrations cache
-*.db
-*.mdf
-*.ldf
+############################
+# App runtime storage (KHÔNG commit)
+############################
+# Thư mục lưu file runtime của API
+VnDocSign.Api/data/
+# Nếu có upload tĩnh
+VnDocSign.Api/wwwroot/uploads/
+**/Uploads/
+**/Upload/
 
-# Generated data
-/data/
-wwwroot/uploads/
-Files/
-Logs/
-Temp/
-/backups/
+############################
+# Secrets / certificates / env
+############################
+# Publish profiles người dùng
+*.pubxml.user
+Properties/PublishProfiles/*.pubxml.user
+# (Tuỳ chính sách repo. Nếu mỗi env publish khác nhau, cũng có thể ignore *.pubxml)
+# Properties/PublishProfiles/*.pubxml
 
-# Backup or test output
-*.bak
+# Appsettings biến thể local/secret (giữ Development/Production mẫu trong repo)
+appsettings.*.local.json
+appsettings.Local.json
+appsettings.*.secret.json
+appsettings.Secrets.json
+secrets.json
+
+# Env files
+.env
+.env.*
+.vault/
+
+# Certificates / keys
+certs/
+*.pfx
+*.p12
+*.pem
+*.cer
+*.crt
+*.key
+
+############################
+# EF Core
+############################
+# Giữ migrations – KHÔNG ignore! (để team đồng bộ DB)
+# => Không thêm bất kỳ dòng ignore nào trỏ vào */Migrations
+
+############################
+# Embedded Frontend (nếu sau này nhúng FE vào API/ClientApp)
+############################
+VnDocSign.Api/ClientApp/node_modules/
+VnDocSign.Api/ClientApp/build/
+VnDocSign.Api/ClientApp/.cache/
+VnDocSign.Api/ClientApp/.next/
+VnDocSign.Api/ClientApp/dist/
+VnDocSign.Api/ClientApp/.env
+VnDocSign.Api/ClientApp/.env.*
+VnDocSign.Api/ClientApp/npm-debug.log*
+VnDocSign.Api/ClientApp/yarn-error.log*
+
+############################
+# Documents / Templates
+############################
+# Mặc định KHÔNG ignore *.docx vì bạn cần commit template
+# Bảo hộ chắc chắn cho thư mục templates (nếu phía trên có rule “rộng” hơn):
+!VnDocSign.Infrastructure/Documents/Templates/**
+# Nếu bạn có thêm thư mục template khác, mở khóa tương tự:
+#!<path-to-your-templates>/**
+
+############################
+# Misc
+############################
 *.zip
 *.7z
-*.tar
-*.gz
 *.rar
-
-# Rider/JetBrains
-.idea/
-*.sln.iml
-
-# Node or npm temp (nếu dùng cho front-end)
-node_modules/
-npm-debug.log
-
-# Other config files
-*.docstates
-*.scc
-
-# =========================
-# End of .gitignore
-# =========================
+*.bak
+*.swp
