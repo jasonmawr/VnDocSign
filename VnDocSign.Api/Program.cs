@@ -58,16 +58,25 @@ builder.Services
     })
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = false; // DEV; bật true khi lên prod qua HTTPS reverse proxy
+        options.RequireHttpsMetadata = false;
         options.SaveToken = true;
+
+        var issuer = builder.Configuration["Jwt:Issuer"];
+        var audience = builder.Configuration["Jwt:Audience"];
+
         options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
-            ValidateIssuer = false,
-            ValidateAudience = false,
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.FromMinutes(2)
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
+
+        // ===== NEW: bật xác thực Issuer/Audience =====
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidIssuer = issuer,
+        ValidAudience = audience,
+
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.FromMinutes(2)
         };
     });
 

@@ -7,6 +7,7 @@ using VnDocSign.Infrastructure.Persistence;
 using VnDocSign.Domain.Entities.Signing;
 using VnDocSign.Domain.Entities.Config;
 using VnDocSign.Domain.Entities.Core;
+using VnDocSign.Application.Common;
 
 namespace VnDocSign.Infrastructure.Setup;
 
@@ -68,17 +69,44 @@ public static class DbSeeder
     // ===== 2) Roles =====
     public static async Task SeedRolesAsync(AppDbContext db)
     {
-        var must = new[]
+        // Bảng role chuẩn: Name (từ RoleNames) ↔ Id (từ RoleIds)
+        var must = new (string Name, Guid Id)[]
         {
-            RoleNames.Admin, RoleNames.VanThu, RoleNames.ChuyenVien,
-            RoleNames.TruongPhong, RoleNames.PhoPhong,
-            RoleNames.TruongKhoa, RoleNames.PhoKhoa,
-            RoleNames.KeToanTruong, RoleNames.PhoGiamDoc, RoleNames.GiamDoc,
-            RoleNames.ChuTichCongDoan, RoleNames.DieuDuongTruong, RoleNames.KTVTruong
+        (RoleNames.Admin,            RoleIds.Admin),
+        (RoleNames.VanThu,           RoleIds.VanThu),
+        (RoleNames.ChuyenVien,       RoleIds.ChuyenVien),
+        (RoleNames.TruongPhong,      RoleIds.TruongPhong),
+        (RoleNames.PhoPhong,         RoleIds.PhoPhong),
+        (RoleNames.TruongKhoa,       RoleIds.TruongKhoa),
+        (RoleNames.PhoKhoa,          RoleIds.PhoKhoa),
+        (RoleNames.KeToanTruong,     RoleIds.KeToanTruong),
+        (RoleNames.PhoGiamDoc,       RoleIds.PhoGiamDoc),
+        (RoleNames.GiamDoc,          RoleIds.GiamDoc),
+        (RoleNames.ChuTichCongDoan,  RoleIds.ChuTichCongDoan),
+        (RoleNames.DieuDuongTruong,  RoleIds.DieuDuongTruong),
+        (RoleNames.KTVTruong,        RoleIds.KTVTruong),
         };
-        var existing = new HashSet<string>(await db.Roles.AsNoTracking().Select(r => r.Name).ToListAsync());
-        foreach (var r in must) if (!existing.Contains(r)) db.Roles.Add(new Role { Name = r });
-        if (db.ChangeTracker.HasChanges()) await db.SaveChangesAsync();
+
+        // Lấy hiện trạng theo Name
+        var existing = await db.Roles.AsNoTracking().ToDictionaryAsync(r => r.Name, r => r);
+
+        foreach (var (name, id) in must)
+        {
+            if (!existing.TryGetValue(name, out var role))
+            {
+                // Chưa có → tạo mới với GUID cố định
+                db.Roles.Add(new Role { Id = id, Name = name });
+            }
+            else
+            {
+                // ĐÃ có: nếu khác Id, KHÔNG đổi PK tại đây (tránh ảnh hưởng dữ liệu đang chạy).
+                // Với DB mới (drop & migrate), Id sẽ đúng theo RoleIds.
+                // Nếu cần ép đồng bộ trên DB đang chạy, làm migration/SQL riêng để cập nhật PK và các FK user_roles.
+            }
+        }
+
+        if (db.ChangeTracker.HasChanges())
+            await db.SaveChangesAsync();
     }
 
     // ===== 3) Admin mặc định (idempotent) =====

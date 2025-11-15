@@ -11,5 +11,8 @@ namespace VnDocSign.Application.Contracts.Interfaces.Users
     {
         Task<UserCreateResponse> CreateAsync(UserCreateRequest req, CancellationToken ct = default);
         Task<IReadOnlyList<UserListItem>> GetAllAsync(CancellationToken ct = default);
+        Task<UserWithRolesDto> GetWithRolesAsync(Guid userId, CancellationToken ct = default);
+        Task<UserWithRolesDto> AssignRolesAsync(Guid userId, AssignRolesRequest req, CancellationToken ct = default);
+        Task<UserWithRolesDto> RemoveRolesAsync(Guid userId, AssignRolesRequest req, CancellationToken ct = default);
     }
 }

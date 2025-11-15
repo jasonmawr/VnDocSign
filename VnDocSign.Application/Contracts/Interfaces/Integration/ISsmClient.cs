@@ -15,7 +15,7 @@ public sealed record SignPdfRequest(
     string InputPdfPath,
     string OutputPdfPath,
     int SignType,           // theo chuẩn SSM
-    int SignLocationType,   // 1: SearchPattern, 2: Coordinates (ví dụ)
+    int SignLocationType,   // 2: SearchPattern, 1: Coordinates (theo đặc tả nội bộ SSM)
     string? SearchPattern = null,
     int? Page = null,
     float? PositionX = null,

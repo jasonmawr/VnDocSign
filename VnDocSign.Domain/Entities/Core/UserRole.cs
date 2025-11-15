@@ -12,5 +12,7 @@ namespace VnDocSign.Domain.Entities.Core
         public User? User { get; set; }
         public Guid RoleId { get; set; }
         public Role? Role { get; set; }
+        public string? Username { get; set; }
+        public string? FullName { get; set; }
     }
 }

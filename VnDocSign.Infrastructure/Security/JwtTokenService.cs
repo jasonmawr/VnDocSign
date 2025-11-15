@@ -16,7 +16,7 @@ public sealed class JwtTokenService : IJwtTokenService
     public string CreateToken(Guid userId, string username, IEnumerable<string> roles)
     {
         var keyStr = _cfg["Jwt:Key"] ?? throw new InvalidOperationException("Missing Jwt:Key");
-        // Key tối thiểu 32 bytes cho HS256 (>= 256-bit)
+
         if (Encoding.UTF8.GetByteCount(keyStr) < 32)
             throw new InvalidOperationException("Jwt:Key must be >= 32 bytes.");
 
@@ -30,12 +30,15 @@ public sealed class JwtTokenService : IJwtTokenService
         };
         claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
 
+        // ===== NEW: đọc thời gian hết hạn từ config =====
+        var minutes = _cfg.GetValue<int?>("Jwt:AccessTokenMinutes") ?? 480; // default 8 giờ
+
         var jwt = new JwtSecurityToken(
             issuer: _cfg["Jwt:Issuer"],
             audience: _cfg["Jwt:Audience"],
             claims: claims,
             notBefore: DateTime.UtcNow,
-            expires: DateTime.UtcNow.AddHours(8),
+            expires: DateTime.UtcNow.AddMinutes(minutes),
             signingCredentials: creds
         );
 

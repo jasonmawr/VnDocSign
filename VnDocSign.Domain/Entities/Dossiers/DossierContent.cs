@@ -19,5 +19,9 @@ namespace VnDocSign.Domain.Entities.Dossiers
 
         public Guid? UpdatedById { get; set; }
         public User? UpdatedBy { get; set; }
+
+        // ===NEW : Mirror để query/report nhanh
+        public string? SoLuuTru { get; set; }  // alias : SO_LUU_TRU
+        public DateTime? NgayLuuTru { get; set; } //alias : NGAY_LUU_TRU (date)
     }
 }
