@@ -197,6 +197,9 @@ public sealed class AppDbContext : DbContext
             e.Property(x => x.TemplateCode).HasMaxLength(64);
             e.Property(x => x.DataJson).HasMaxLength(8000).IsRequired();
 
+            e.Property(x => x.SoLuuTru).HasMaxLength(100);
+            e.Property(x => x.NgayLuuTru).HasColumnType("date");
+
             e.HasOne(x => x.Dossier)
                 .WithOne()                                            // không vòng lặp navigation
                 .HasForeignKey<DossierContent>(x => x.DossierId)

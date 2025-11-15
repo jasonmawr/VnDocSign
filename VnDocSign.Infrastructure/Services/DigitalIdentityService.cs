@@ -31,7 +31,9 @@ namespace VnDocSign.Infrastructure.Services
             // Đảm bảo chỉ 1 DigitalIdentity active cho mỗi User
             if (req.IsActive)
             {
-                var actives = await _db.DigitalIdentities.Where(x => x.UserId == req.UserId && x.IsActive).ToListAsync(ct);
+                var actives = await _db.DigitalIdentities
+                    .Where(x => x.UserId == req.UserId && x.IsActive)
+                    .ToListAsync(ct);
                 foreach (var a in actives) a.IsActive = false;
             }
 
@@ -47,13 +49,13 @@ namespace VnDocSign.Infrastructure.Services
                 IsActive = req.IsActive,
                 CreatedAtUtc = DateTime.UtcNow,
 
-                // Nếu bạn đã làm GĐ5.1 mở rộng entity thì map thêm các trường mới:
-                Provider = (req as dynamic)?.Provider,
-                NotBefore = (req as dynamic)?.NotBefore,
-                NotAfter = (req as dynamic)?.NotAfter,
-                SerialNo = (req as dynamic)?.SerialNo,
-                Issuer = (req as dynamic)?.Issuer,
-                Subject = (req as dynamic)?.Subject
+                // GĐ5.1 – thông tin chứng thư mở rộng
+                Provider = req.Provider,
+                NotBefore = req.NotBefore,
+                NotAfter = req.NotAfter,
+                SerialNo = req.SerialNo,
+                Issuer = req.Issuer,
+                Subject = req.Subject
             };
 
             _db.DigitalIdentities.Add(e);
@@ -81,14 +83,13 @@ namespace VnDocSign.Infrastructure.Services
             e.Title = req.Title ?? e.Title;
             if (req.IsActive.HasValue) e.IsActive = req.IsActive.Value;
 
-            // Nếu đã mở rộng entity (GĐ5.1), cập nhật các trường mới (an toàn với null):
-            var dyn = (req as dynamic);
-            e.Provider = dyn?.Provider ?? e.Provider;
-            e.NotBefore = dyn?.NotBefore ?? e.NotBefore;
-            e.NotAfter = dyn?.NotAfter ?? e.NotAfter;
-            e.SerialNo = dyn?.SerialNo ?? e.SerialNo;
-            e.Issuer = dyn?.Issuer ?? e.Issuer;
-            e.Subject = dyn?.Subject ?? e.Subject;
+            // GĐ5.1 – cập nhật thông tin chứng thư (nếu gửi lên)
+            if (req.Provider is not null) e.Provider = req.Provider;
+            if (req.NotBefore.HasValue) e.NotBefore = req.NotBefore;
+            if (req.NotAfter.HasValue) e.NotAfter = req.NotAfter;
+            if (req.SerialNo is not null) e.SerialNo = req.SerialNo;
+            if (req.Issuer is not null) e.Issuer = req.Issuer;
+            if (req.Subject is not null) e.Subject = req.Subject;
 
             await _db.SaveChangesAsync(ct);
             return Map(e);
@@ -104,10 +105,21 @@ namespace VnDocSign.Infrastructure.Services
 
         private static DigitalIdentityDto Map(VnDocSign.Domain.Entities.Core.DigitalIdentity e)
             => new(
-                e.Id, e.UserId, e.EmpCode, e.CertName, e.Company,
-                e.DisplayName, e.Title, e.IsActive, e.CreatedAtUtc,
-                // Nếu DTO của bạn đã mở rộng GĐ5.1, map các trường mới; nếu chưa, các tham số cuối có thể bỏ:
-                e.Provider, e.NotBefore, e.NotAfter, e.SerialNo, e.Issuer, e.Subject
+                e.Id,
+                e.UserId,
+                e.EmpCode,
+                e.CertName,
+                e.Company,
+                e.DisplayName,
+                e.Title,
+                e.IsActive,
+                e.CreatedAtUtc,
+                e.Provider,
+                e.NotBefore,
+                e.NotAfter,
+                e.SerialNo,
+                e.Issuer,
+                e.Subject
             );
     }
 }

@@ -18,5 +18,7 @@ public static class TemplateAliasMaps
         ["noiDungTrinh"] = "NOIDUNG_TRINH",
         ["kienNghiDeXuat"] = "KIENNGHI_DEXUAT",
         // mở rộng khi cần
+        ["soLuuTru"] = "SO_LUU_TRU",
+        ["ngayLuuTru"] = "NGAY_LUU_TRU",
     };
 }

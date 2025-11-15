@@ -39,7 +39,13 @@ public sealed class SigningController : ControllerBase
         return Ok();
     }
 
-    public sealed record ApproveBody(Guid ActorUserId, string Pin, string? Comment);
+    public sealed class ApproveBody
+    {
+        public Guid ActorUserId { get; set; }
+        public string? Pin { get; set; }
+        public string? Comment { get; set; }
+        public string SignMode { get; set; } = "mock";  // default mock
+    }
     public sealed record RejectBody(Guid ActorUserId, string? Comment);
     public sealed record ClerkConfirmBody(Guid ActorUserId);
 }

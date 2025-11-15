@@ -154,5 +154,52 @@ namespace VnDocSign.Infrastructure.Documents.Templates
             )
             );
         }
+
+        /// <summary>
+        /// Xóa các block được đánh dấu bằng bookmark BLOCK_{NAME}.
+        /// Ví dụ: BLOCK_NGUOITRINH, BLOCK_KHTH, ...
+        /// </summary>
+        /// <param name="doc">WordprocessingDocument đang mở với quyền ghi (isEditable = true)</param>
+        /// <param name="blocksToRemove">Danh sách tên block (không cần tiền tố BLOCK_)</param>
+        public static void RemoveBlocks(WordprocessingDocument doc, IEnumerable<string> blocksToRemove)
+        {
+            if (blocksToRemove == null) return;
+
+            var body = doc.MainDocumentPart.Document.Body;
+            if (body == null) return;
+
+            foreach (var blockName in blocksToRemove)
+            {
+                if (string.IsNullOrWhiteSpace(blockName)) continue;
+
+                // Trong file DOCX, mình đánh dấu block bằng bookmark tên BLOCK_{NAME}
+                string bookmarkName = $"BLOCK_{blockName}";
+
+                var start = body.Descendants<BookmarkStart>()
+                    .FirstOrDefault(b => string.Equals(b.Name?.Value, bookmarkName, StringComparison.OrdinalIgnoreCase));
+
+                if (start == null) continue;
+
+                var end = body.Descendants<BookmarkEnd>()
+                    .FirstOrDefault(b => b.Id == start.Id);
+
+                if (end == null) continue;
+
+                // Xóa toàn bộ nội dung giữa start và end
+                var current = start.NextSibling();
+                while (current != null && current != end)
+                {
+                    var next = current.NextSibling();
+                    current.Remove();
+                    current = next;
+                }
+
+                // Cuối cùng xóa luôn 2 mốc bookmark
+                start.Remove();
+                end.Remove();
+            }
+
+            doc.MainDocumentPart.Document.Save();
+        }
     }
 }

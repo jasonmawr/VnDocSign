@@ -112,7 +112,7 @@ public sealed class SigningService : ISigningService
                 inputPdf = current;
             }
 
-            // 4) Chuẩn bị OutputPdf (tăng version)
+            // 4) Chuẩn bị OutputPdf (tăng version) – dùng cho SSM
             var folder = GetDossierFolder(dossier.Id);
             Directory.CreateDirectory(folder);
             var version = 1;
@@ -125,77 +125,125 @@ public sealed class SigningService : ISigningService
                 _logger.LogInformation("GHICHU_* (stub) - Comment: {Comment}", req.Comment);
             }
 
-            // 6) Quyết định chế độ đặt chữ ký
-            //    Mặc định ký theo SearchPattern nếu có (page=1 nếu không cấu hình).
-            //    Nếu KHÔNG có pattern thì hiện tại chưa có toạ độ trong SignTask -> chặn sớm để tránh gửi null xuống SSM.
-            string? searchPattern = t.VisiblePattern;
-            int signLocationType;
-            int? page = null; // để null nếu backend SSM tự tìm trang theo pattern; nếu cần, đặt mặc định 1.
-            float? posX = null;
-            float? posY = null;
+            // Chuẩn bị biến chung cho SignEvent / pointer
+            string finalPdfPath;
+            SignEvent ev;
 
-            if (!string.IsNullOrWhiteSpace(searchPattern))
+            // 6) Nếu Pin rỗng => Ký MOCK PNG, không gọi SSM (Phase 1: mock ký + lưu event)
+            if (string.IsNullOrWhiteSpace(req.Pin))
             {
-                signLocationType = 1; // 1=SearchPattern
-                if (page is null) page = 1; // page mặc định an toàn khi ký pattern
+                // Đánh dấu Task hiện tại đã Approved TRƯỚC khi render mock,
+                // để PdfRenderService nhìn thấy và dán PNG chữ ký cho chính slot này.
+                t.Status = SignTaskStatus.Approved;
+                t.DecidedAt = DateTime.UtcNow;
+                t.Comment = req.Comment;
+
+                // Ký mock: PdfRenderService sẽ
+                // - copy Source.docx → Signed_vN.docx
+                // - chèn PNG vào các alias SIG_* những slot đã Approved
+                // - convert ra Signed_vN.pdf và trả về path
+                var mockPdf = await _pdf.RenderSignedMockAsync(dossier.Id, ct);
+
+                finalPdfPath = mockPdf;
+
+                ev = new SignEvent
+                {
+                    DossierId = dossier.Id,
+                    ActorUserId = req.ActorUserId,
+                    PdfPathIn = inputPdf,
+                    PdfPathOut = mockPdf,
+                    // 0 = Mock, 1 = SSM (giữ đúng ý nghĩa SignType = Mock / SSM)
+                    SignType = 0,
+                    SignLocationType = 0,
+                    SearchPattern = null,
+                    Page = null,
+                    PositionX = null,
+                    PositionY = null,
+                    VisibleSignatureName = t.VisiblePattern,
+                    Success = true,
+                    Error = null,
+                    CreatedAtUtc = DateTime.UtcNow
+                };
+
+                _db.Set<SignEvent>().Add(ev);
             }
             else
             {
-                // Ở codebase hiện tại chưa có toạ độ trong SignTask.
-                // Nếu muốn fallback toạ độ, cần lấy từ SignSlotDef (khác bảng) – không có ở đây.
-                throw new InvalidOperationException("Không có VisiblePattern cho slot hiện tại và chưa cấu hình toạ độ fallback.");
+                // 6b) Ký số thật qua SSM
+                //    Mặc định ký theo SearchPattern nếu có (page=1 nếu không cấu hình).
+                //    Theo tài liệu: SignLocationType = 2 cho SearchPattern, 1 cho toạ độ X/Y.
+                string? searchPattern = t.VisiblePattern;
+                int signLocationType;
+                int? page = null; // để null nếu backend SSM tự tìm trang theo pattern; nếu cần, đặt mặc định 1.
+                float? posX = null;
+                float? posY = null;
+
+                if (!string.IsNullOrWhiteSpace(searchPattern))
+                {
+                    // 2 = SearchPattern (đúng tài liệu BE+FE)
+                    signLocationType = 2;
+                    if (page is null) page = 1; // page mặc định an toàn khi ký pattern
+                }
+                else
+                {
+                    // Ở codebase hiện tại chưa có toạ độ trong SignTask.
+                    // Nếu muốn fallback toạ độ, cần lấy từ SignSlotDef (khác bảng) – chưa triển khai ở giai đoạn này.
+                    throw new InvalidOperationException("Không có VisiblePattern cho slot hiện tại và chưa cấu hình toạ độ fallback.");
+                }
+
+                // 7) Gọi SSM thật
+                var signReq = new SignPdfRequest(
+                    EmpCode: di.EmpCode,
+                    Pin: req.Pin ?? string.Empty,
+                    CertName: di.CertName,
+                    Company: di.Company,
+                    Title: di.Title ?? string.Empty,
+                    Name: di.DisplayName ?? string.Empty,
+                    InputPdfPath: inputPdf,
+                    OutputPdfPath: outputPdf,
+                    SignType: 1,                      // 1 = ký hình ảnh (SSM)
+                    SignLocationType: signLocationType,
+                    SearchPattern: searchPattern,
+                    Page: page,
+                    PositionX: posX,
+                    PositionY: posY,
+                    BearerToken: null                 // có thể truyền token SSM nếu cần (_config["Ssm:StaticBearer"])
+                );
+
+                var result = await _ssm.SignPdfAsync(signReq, ct);
+
+                // 8) Ghi SignEvent
+                ev = new SignEvent
+                {
+                    DossierId = dossier.Id,
+                    ActorUserId = req.ActorUserId,
+                    PdfPathIn = inputPdf,
+                    PdfPathOut = outputPdf,
+                    SignType = signReq.SignType,
+                    SignLocationType = signReq.SignLocationType,
+                    SearchPattern = signReq.SearchPattern,
+                    Page = signReq.Page,
+                    PositionX = signReq.PositionX,
+                    PositionY = signReq.PositionY,
+                    VisibleSignatureName = t.VisiblePattern,
+                    Success = result.Success,
+                    Error = result.Error,
+                    CreatedAtUtc = DateTime.UtcNow
+                };
+                _db.Set<SignEvent>().Add(ev);
+
+                if (!result.Success)
+                {
+                    await _db.SaveChangesAsync(ct); // lưu event lỗi
+                    await tx.RollbackAsync(ct);
+                    throw new InvalidOperationException("Ký số thất bại: " + (result.Error ?? "unknown"));
+                }
+
+                finalPdfPath = outputPdf;
             }
 
-            // 7) Gọi SSM thật
-            var signReq = new SignPdfRequest(
-                EmpCode: di.EmpCode,
-                Pin: req.Pin ?? string.Empty,
-                CertName: di.CertName,
-                Company: di.Company,
-                Title: di.Title ?? string.Empty,
-                Name: di.DisplayName ?? string.Empty,
-                InputPdfPath: inputPdf,
-                OutputPdfPath: outputPdf,
-                SignType: 1,                      // 1 = ký hình ảnh (giữ nguyên theo SSM)
-                SignLocationType: signLocationType,
-                SearchPattern: searchPattern,
-                Page: page,
-                PositionX: posX,
-                PositionY: posY,
-                BearerToken: null                 // có thể truyền token SSM nếu cần (_config["Ssm:StaticBearer"])
-            );
-
-            var result = await _ssm.SignPdfAsync(signReq, ct);
-
-            // 8) Ghi SignEvent
-            var ev = new SignEvent
-            {
-                DossierId = dossier.Id,
-                ActorUserId = req.ActorUserId,
-                PdfPathIn = inputPdf,
-                PdfPathOut = outputPdf,
-                SignType = signReq.SignType,
-                SignLocationType = signReq.SignLocationType,
-                SearchPattern = signReq.SearchPattern,
-                Page = signReq.Page,
-                PositionX = signReq.PositionX,
-                PositionY = signReq.PositionY,
-                VisibleSignatureName = t.VisiblePattern,
-                Success = result.Success,
-                Error = result.Error,
-                CreatedAtUtc = DateTime.UtcNow
-            };
-            _db.Set<SignEvent>().Add(ev);
-
-            if (!result.Success)
-            {
-                await _db.SaveChangesAsync(ct); // lưu event lỗi
-                await tx.RollbackAsync(ct);
-                throw new InvalidOperationException("Ký số thất bại: " + (result.Error ?? "unknown"));
-            }
-
-            // 9) Cập nhật pointer current
-            await WriteCurrentSignedAsync(dossier.Id, outputPdf, ct);
+            // 9) Cập nhật pointer current (dùng chung cho cả mock + SSM)
+            await WriteCurrentSignedAsync(dossier.Id, finalPdfPath, ct);
 
             // 10) Cập nhật trạng thái task & dossier
             t.Status = SignTaskStatus.Approved;

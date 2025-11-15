@@ -68,7 +68,7 @@ namespace VnDocSign.Infrastructure.Clients
 
                 // ---- loại ký/vị trí ----
                 form.Add(new StringContent(req.SignType.ToString()), "signType");                   // thường là "1"
-                form.Add(new StringContent(req.SignLocationType.ToString()), "signLocationType");   // "1" pattern, "2" coords
+                form.Add(new StringContent(req.SignLocationType.ToString()), "signLocationType");  // 2 = SearchPattern, 1 = Coordinates
 
                 // SearchPattern trước, toạ độ sau
                 if (!string.IsNullOrWhiteSpace(req.SearchPattern))
