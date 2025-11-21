@@ -11,88 +11,113 @@ public sealed class UserService : IUserService
     private readonly AppDbContext _db;
     public UserService(AppDbContext db) => _db = db;
 
+    // CREATE USER
     public async Task<UserCreateResponse> CreateAsync(UserCreateRequest req, CancellationToken ct = default)
     {
-        if (await _db.Users.AnyAsync(x => x.Username == req.Username, ct))
-            throw new InvalidOperationException("Username exists.");
+        var username = req.Username.Trim().ToLower();
 
-        var u = new User
+        if (await _db.Users.AnyAsync(x => x.Username.ToLower() == username, ct))
+            throw new InvalidOperationException("Username already exists.");
+
+        var user = new User
         {
-            Username = req.Username,
-            // ===== FIXED: HASH PASSWORD =====
+            Username = username,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
-            FullName = req.FullName,
-            Email = req.Email,
+            FullName = req.FullName.Trim(),
+            Email = req.Email.Trim(),
             DepartmentId = req.DepartmentId,
-            IsActive = true
+            IsActive = true,
+            // EmployeeCode hiện chưa có – sẽ đồng bộ từ HRM sau
+            EmployeeCode = null
         };
 
-        _db.Users.Add(u);
+        _db.Users.Add(user);
         await _db.SaveChangesAsync(ct);
-        return new UserCreateResponse(u.Id);
+
+        return new UserCreateResponse(user.Id);
     }
 
+    // GET ALL USERS
     public async Task<IReadOnlyList<UserListItem>> GetAllAsync(CancellationToken ct = default)
-        => await _db.Users.AsNoTracking()
-            .Select(u => new UserListItem(u.Id, u.Username, u.FullName, u.Email, u.IsActive, u.DepartmentId))
+    {
+        return await _db.Users
+            .AsNoTracking()
+            .Select(u => new UserListItem(
+                u.Id,
+                u.Username,
+                u.FullName,
+                u.Email,
+                u.IsActive,
+                u.DepartmentId,
+                u.EmployeeCode
+            ))
             .ToListAsync(ct);
+    }
 
-    // ================== ROLES ==================
-
+    // GET USER + ROLES
     public async Task<UserWithRolesDto> GetWithRolesAsync(Guid userId, CancellationToken ct = default)
     {
-        var u = await _db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == userId, ct)
-                ?? throw new KeyNotFoundException("User not found");
+        var user = await _db.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == userId, ct)
+            ?? throw new KeyNotFoundException("User not found.");
 
-        var roles = await (from ur in _db.UserRoles
-                           join r in _db.Roles on ur.RoleId equals r.Id
-                           where ur.UserId == userId
-                           select r.Name).ToListAsync(ct);
+        var roles = await _db.UserRoles
+            .Where(x => x.UserId == userId)
+            .Select(x => x.Role!.Name)
+            .ToListAsync(ct);
 
-        return new UserWithRolesDto(u.Id, u.Username, u.FullName, u.Email, u.IsActive, u.DepartmentId, roles);
+        return new UserWithRolesDto(
+            user.Id,
+            user.Username,
+            user.FullName,
+            user.Email,
+            user.IsActive,
+            user.DepartmentId,
+            user.EmployeeCode,
+            roles
+        );
     }
 
+    // ASSIGN ROLES
     public async Task<UserWithRolesDto> AssignRolesAsync(Guid userId, AssignRolesRequest req, CancellationToken ct = default)
     {
-        if (req.Roles is not { Count: > 0 }) return await GetWithRolesAsync(userId, ct);
-
-        var u = await _db.Users.FirstOrDefaultAsync(x => x.Id == userId, ct)
-                ?? throw new KeyNotFoundException("User not found");
-
-        var names = req.Roles
+        var normalized = req.Roles
             .Select(r => r.Trim())
-            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Where(r => r != "")
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        if (names.Count == 0) return await GetWithRolesAsync(userId, ct);
+        if (normalized.Count == 0)
+            return await GetWithRolesAsync(userId, ct);
 
-        // Lấy (hoặc auto-create ở DEV) các Role theo tên
-        var roles = await _db.Roles.Where(r => names.Contains(r.Name)).ToListAsync(ct);
-        var missing = names.Except(roles.Select(r => r.Name), StringComparer.OrdinalIgnoreCase).ToList();
-        foreach (var n in missing)
-        {
-            var role = new Role { Name = n };
-            roles.Add(role);
-            _db.Roles.Add(role);
-        }
+        var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == userId, ct)
+                   ?? throw new KeyNotFoundException("User not found.");
 
-        // Tránh trùng liên kết
+        var existingRoles = await _db.Roles
+            .Where(r => normalized.Contains(r.Name))
+            .ToListAsync(ct);
+
+        var missing = normalized.Except(existingRoles.Select(r => r.Name), StringComparer.OrdinalIgnoreCase).ToList();
+
+        foreach (var roleName in missing)
+            throw new InvalidOperationException($"Role '{roleName}' does not exist.");
+
         var existingRoleIds = await _db.UserRoles
             .Where(x => x.UserId == userId)
             .Select(x => x.RoleId)
             .ToListAsync(ct);
 
-        foreach (var r in roles)
+        foreach (var role in existingRoles)
         {
-            if (!existingRoleIds.Contains(r.Id))
+            if (!existingRoleIds.Contains(role.Id))
             {
                 _db.UserRoles.Add(new UserRole
                 {
                     UserId = userId,
-                    RoleId = r.Id,
-                    Username = u.Username,
-                    FullName = u.FullName
+                    RoleId = role.Id,
+                    Username = user.Username,
+                    FullName = user.FullName
                 });
             }
         }
@@ -101,22 +126,23 @@ public sealed class UserService : IUserService
         return await GetWithRolesAsync(userId, ct);
     }
 
+    // REMOVE ROLES
     public async Task<UserWithRolesDto> RemoveRolesAsync(Guid userId, AssignRolesRequest req, CancellationToken ct = default)
     {
-        if (req.Roles is not { Count: > 0 }) return await GetWithRolesAsync(userId, ct);
+        var normalized = req.Roles
+            .Select(r => r.Trim())
+            .Where(r => r != "")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
-        var roleIds = await _db.Roles
-            .Where(r => req.Roles.Contains(r.Name))
-            .Select(r => r.Id)
-            .ToListAsync(ct);
-
-        if (roleIds.Count == 0) return await GetWithRolesAsync(userId, ct);
+        if (normalized.Count == 0)
+            return await GetWithRolesAsync(userId, ct);
 
         var links = await _db.UserRoles
-            .Where(ur => ur.UserId == userId && roleIds.Contains(ur.RoleId))
+            .Where(ur => ur.UserId == userId && normalized.Contains(ur.Role!.Name))
             .ToListAsync(ct);
 
-        if (links.Count > 0)
+        if (links.Any())
         {
             _db.UserRoles.RemoveRange(links);
             await _db.SaveChangesAsync(ct);

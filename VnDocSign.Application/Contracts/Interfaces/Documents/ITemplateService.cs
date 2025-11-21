@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using VnDocSign.Application.Contracts.Dtos.Templates;
@@ -15,9 +14,14 @@ public interface ITemplateService
 
     Task<TemplateUploadResultDto> UploadAsync(
         TemplateUploadRequest meta,
-        IFormFile file, Guid? userId,
+        IFormFile file,
+        Guid? userId,
         CancellationToken ct = default);
 
-    Task ToggleActiveAsync(int id, CancellationToken ct = default);
+    /// <summary>
+    /// Bật/tắt trạng thái hoạt động của một template và trả về thông tin mới nhất.
+    /// </summary>
+    Task<TemplateListItemDto> ToggleActiveAsync(int id, CancellationToken ct = default);
+
     Task DeleteVersionAsync(int versionId, CancellationToken ct = default);
 }

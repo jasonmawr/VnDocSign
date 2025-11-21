@@ -8,305 +8,392 @@ using VnDocSign.Application.Contracts.Interfaces.Signing;
 using VnDocSign.Application.Contracts.Interfaces.Integration;
 using VnDocSign.Domain.Entities.Core;
 using VnDocSign.Domain.Entities.Dossiers;
-using VnDocSign.Domain.Entities.Signing;
 using VnDocSign.Infrastructure.Persistence;
-using System;
-using System.Threading;
+using VnDocSign.Domain.Entities.Signing;
 
-namespace VnDocSign.Infrastructure.Services;
-
-public sealed class SigningService : ISigningService
+namespace VnDocSign.Infrastructure.Services
 {
-    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> _dossierLocks = new();
-
-    private readonly AppDbContext _db;
-    private readonly ISignActivationService _activation;
-    private readonly IPdfRenderService _pdf;
-    private readonly ISsmClient _ssm;
-    private readonly IConfiguration _config;
-    private readonly ILogger<SigningService> _logger;
-
-    public SigningService(
-        AppDbContext db,
-        ISignActivationService activation,
-        IPdfRenderService pdf,
-        ISsmClient ssm,
-        IConfiguration config,
-        ILogger<SigningService> logger)
+    public sealed class SigningService : ISigningService
     {
-        _db = db;
-        _activation = activation;
-        _pdf = pdf;
-        _ssm = ssm;
-        _config = config;
-        _logger = logger;
-    }
+        private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> _locks = new();
 
-    // ========= Helpers for file strategy =========
-    private string GetRoot() => _config["FileStorage:Root"] ?? "./data";
-    private string GetDossierFolder(Guid dossierId) => Path.Combine(GetRoot(), "dossiers", dossierId.ToString("N"));
-    private string GetSourcePdfPath(Guid dossierId) => Path.Combine(GetDossierFolder(dossierId), "Source.pdf");
-    private string GetSignedPath(Guid dossierId, int version) => Path.Combine(GetDossierFolder(dossierId), $"Signed_v{version}.pdf");
-    private string GetCurrentPointerPath(Guid dossierId) => Path.Combine(GetDossierFolder(dossierId), "current.pointer");
+        private readonly AppDbContext _db;
+        private readonly ISignActivationService _activation;
+        private readonly IPdfRenderService _pdf;
+        private readonly ISsmClient _ssm;
+        private readonly IConfiguration _config;
+        private readonly ILogger<SigningService> _logger;
+        private readonly IFileVersioningService _fileVersioning;
 
-    private async Task<string?> ReadCurrentSignedAsync(Guid dossierId, CancellationToken ct)
-    {
-        var p = GetCurrentPointerPath(dossierId);
-        if (!File.Exists(p)) return null;
-        return await File.ReadAllTextAsync(p, ct);
-    }
-
-    private async Task WriteCurrentSignedAsync(Guid dossierId, string path, CancellationToken ct)
-    {
-        Directory.CreateDirectory(GetDossierFolder(dossierId));
-        await File.WriteAllTextAsync(GetCurrentPointerPath(dossierId), path, ct);
-    }
-
-    private static SemaphoreSlim GetDossierLock(Guid dossierId)
-        => _dossierLocks.GetOrAdd(dossierId, _ => new SemaphoreSlim(1, 1));
-
-    // ========= Business Methods =========
-
-    public async Task ApproveAndSignAsync(ApproveRequest req, CancellationToken ct = default)
-    {
-        // 0) Load & quyền
-        var t = await _db.SignTasks
-            .Include(x => x.Dossier)
-            .FirstOrDefaultAsync(x => x.Id == req.TaskId, ct)
-            ?? throw new InvalidOperationException("Task not found.");
-
-        if (!t.IsActivated || t.Status != SignTaskStatus.Pending)
-            throw new InvalidOperationException("Task not ready or already processed.");
-
-        if (t.AssigneeId != req.ActorUserId)
-            throw new UnauthorizedAccessException("User not allowed.");
-
-        var dossier = t.Dossier ?? throw new InvalidOperationException("Dossier not found.");
-
-        // 1) Lấy DigitalIdentity đang active của actor
-        var di = await _db.Set<DigitalIdentity>()
-            .Where(x => x.UserId == req.ActorUserId && x.IsActive)
-            .FirstOrDefaultAsync(ct);
-
-        if (di is null)
-            throw new InvalidOperationException("Tài khoản chưa có DigitalIdentity đang hoạt động. Liên hệ Admin để cấu hình.");
-
-        // 2) Lock theo Dossier (tránh race khi nhóm song song cùng ghi file)
-        var locker = GetDossierLock(dossier.Id);
-        await locker.WaitAsync(ct);
-
-        await using var tx = await _db.Database.BeginTransactionAsync(ct);
-        try
+        public SigningService(
+            AppDbContext db,
+            ISignActivationService activation,
+            IPdfRenderService pdf,
+            ISsmClient ssm,
+            IConfiguration config,
+            ILogger<SigningService> logger,
+            IFileVersioningService fileVersioning)
         {
-            // 3) Lấy InputPdf: nếu chưa có bản ký -> render source; nếu có -> dùng bản current
-            string? current = await ReadCurrentSignedAsync(dossier.Id, ct);
-            string inputPdf;
-            if (string.IsNullOrWhiteSpace(current) || !File.Exists(current))
+            _db = db;
+            _activation = activation;
+            _pdf = pdf;
+            _ssm = ssm;
+            _config = config;
+            _logger = logger;
+            _fileVersioning = fileVersioning;
+        }
+
+        private static SemaphoreSlim GetLock(Guid id)
+            => _locks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
+
+        // ==========================================================
+        // Helper: kiểm tra actor có quyền thao tác trên task (bao gồm ủy quyền)
+        // ==========================================================
+        private async Task<bool> IsActorAllowedForTaskAsync(SignTask task, Guid actorUserId, CancellationToken ct)
+        {
+            if (task.AssigneeId == actorUserId)
+                return true;
+
+            var now = DateTime.UtcNow;
+
+            return await _db.UserDelegations.AsNoTracking()
+                .AnyAsync(d =>
+                    d.IsActive &&
+                    d.FromUserId == task.AssigneeId &&
+                    d.ToUserId == actorUserId &&
+                    d.StartUtc <= now &&
+                    (d.EndUtc == null || d.EndUtc >= now),
+                    ct);
+        }
+
+        // ==========================================================
+        // APPROVE + SIGN (MOCK hoặc SSM thật tuỳ Mode + Pin)
+        // ==========================================================
+        public async Task ApproveAndSignAsync(ApproveRequest req, CancellationToken ct = default)
+        {
+            // Load task
+            var t = await _db.SignTasks
+                .Include(x => x.Dossier)
+                .FirstOrDefaultAsync(x => x.Id == req.TaskId, ct)
+                ?? throw new InvalidOperationException("Không tìm thấy task.");
+
+            if (!t.IsActivated || t.Status != SignTaskStatus.Pending)
+                throw new InvalidOperationException("Bước ký này chưa được kích hoạt.");
+
+            if (!await IsActorAllowedForTaskAsync(t, req.ActorUserId, ct))
+                throw new UnauthorizedAccessException("Bạn không được phép ký bước này.");
+
+            var dossier = t.Dossier!;
+
+            // Mode ký
+            var mode = _config["Ssm:Mode"] ?? "Real";
+            bool isMockMode = mode.Equals("Mock", StringComparison.OrdinalIgnoreCase);
+            bool useSsm = !isMockMode && !string.IsNullOrWhiteSpace(req.Pin);
+
+            // Nếu ký thật → phải có DigitalIdentity
+            DigitalIdentity? di = null;
+            if (useSsm)
             {
-                inputPdf = await _pdf.RenderDossierToPdf(dossier.Id, ct);
+                di = await _db.DigitalIdentities
+                    .FirstOrDefaultAsync(x => x.UserId == req.ActorUserId && x.IsActive, ct)
+                    ?? throw new InvalidOperationException("Bạn chưa có chứng thư số đang hoạt động.");
+            }
+
+            // Lock theo dossier
+            var locker = GetLock(dossier.Id);
+            await locker.WaitAsync(ct);
+
+            await using var tx = await _db.Database.BeginTransactionAsync(ct);
+            try
+            {
+                // Input PDF (nếu chưa có file ký → render mới)
+                string? current = await _fileVersioning.GetCurrentPointerAsync(dossier.Id, ct);
+                string inputPdf = !string.IsNullOrWhiteSpace(current) && File.Exists(current)
+                    ? current
+                    : await _pdf.RenderDossierToPdf(dossier.Id, ct);
+
                 if (!inputPdf.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
                     inputPdf = await _pdf.EnsurePdf(inputPdf, ct);
-            }
-            else
-            {
-                inputPdf = current;
-            }
 
-            // 4) Chuẩn bị OutputPdf (tăng version) – dùng cho SSM
-            var folder = GetDossierFolder(dossier.Id);
-            Directory.CreateDirectory(folder);
-            var version = 1;
-            while (File.Exists(GetSignedPath(dossier.Id, version))) version++;
-            var outputPdf = GetSignedPath(dossier.Id, version);
+                SignEvent ev;
+                string finalSignedPath;
 
-            // 5) (Stub) chèn GHICHU_* nếu có comment
-            if (!string.IsNullOrWhiteSpace(req.Comment))
-            {
-                _logger.LogInformation("GHICHU_* (stub) - Comment: {Comment}", req.Comment);
-            }
-
-            // Chuẩn bị biến chung cho SignEvent / pointer
-            string finalPdfPath;
-            SignEvent ev;
-
-            // 6) Nếu Pin rỗng => Ký MOCK PNG, không gọi SSM (Phase 1: mock ký + lưu event)
-            if (string.IsNullOrWhiteSpace(req.Pin))
-            {
-                // Đánh dấu Task hiện tại đã Approved TRƯỚC khi render mock,
-                // để PdfRenderService nhìn thấy và dán PNG chữ ký cho chính slot này.
-                t.Status = SignTaskStatus.Approved;
-                t.DecidedAt = DateTime.UtcNow;
-                t.Comment = req.Comment;
-
-                // Ký mock: PdfRenderService sẽ
-                // - copy Source.docx → Signed_vN.docx
-                // - chèn PNG vào các alias SIG_* những slot đã Approved
-                // - convert ra Signed_vN.pdf và trả về path
-                var mockPdf = await _pdf.RenderSignedMockAsync(dossier.Id, ct);
-
-                finalPdfPath = mockPdf;
-
-                ev = new SignEvent
+                if (!useSsm)
                 {
-                    DossierId = dossier.Id,
-                    ActorUserId = req.ActorUserId,
-                    PdfPathIn = inputPdf,
-                    PdfPathOut = mockPdf,
-                    // 0 = Mock, 1 = SSM (giữ đúng ý nghĩa SignType = Mock / SSM)
-                    SignType = 0,
-                    SignLocationType = 0,
-                    SearchPattern = null,
-                    Page = null,
-                    PositionX = null,
-                    PositionY = null,
-                    VisibleSignatureName = t.VisiblePattern,
-                    Success = true,
-                    Error = null,
-                    CreatedAtUtc = DateTime.UtcNow
-                };
+                    // ===============================
+                    // MOCK SIGN
+                    // ===============================
+                    t.Status = SignTaskStatus.Approved;
+                    t.DecidedAt = DateTime.UtcNow;
+                    t.Comment = req.Comment;
 
-                _db.Set<SignEvent>().Add(ev);
-            }
-            else
-            {
-                // 6b) Ký số thật qua SSM
-                //    Mặc định ký theo SearchPattern nếu có (page=1 nếu không cấu hình).
-                //    Theo tài liệu: SignLocationType = 2 cho SearchPattern, 1 cho toạ độ X/Y.
-                string? searchPattern = t.VisiblePattern;
-                int signLocationType;
-                int? page = null; // để null nếu backend SSM tự tìm trang theo pattern; nếu cần, đặt mặc định 1.
-                float? posX = null;
-                float? posY = null;
+                    var mockTemp = await _pdf.RenderSignedMockAsync(dossier.Id, ct);
+                    finalSignedPath = await _fileVersioning.SaveSignedVersionAsync(dossier.Id, mockTemp, ct);
 
-                if (!string.IsNullOrWhiteSpace(searchPattern))
-                {
-                    // 2 = SearchPattern (đúng tài liệu BE+FE)
-                    signLocationType = 2;
-                    if (page is null) page = 1; // page mặc định an toàn khi ký pattern
+                    ev = new SignEvent
+                    {
+                        DossierId = dossier.Id,
+                        ActorUserId = req.ActorUserId,
+                        PdfPathIn = inputPdf,
+                        PdfPathOut = finalSignedPath,
+                        SignType = 0,
+                        SignLocationType = 0,
+                        VisibleSignatureName = t.VisiblePattern,
+                        Success = true,
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+
+                    _db.SignEvents.Add(ev);
                 }
                 else
                 {
-                    // Ở codebase hiện tại chưa có toạ độ trong SignTask.
-                    // Nếu muốn fallback toạ độ, cần lấy từ SignSlotDef (khác bảng) – chưa triển khai ở giai đoạn này.
-                    throw new InvalidOperationException("Không có VisiblePattern cho slot hiện tại và chưa cấu hình toạ độ fallback.");
+                    // ===============================
+                    // REAL SSM SIGN
+                    // ===============================
+
+                    if (string.IsNullOrWhiteSpace(t.VisiblePattern))
+                        throw new InvalidOperationException("Slot hiện tại chưa được cấu hình VisiblePattern.");
+
+                    // File tạm, FileVersioningService sẽ move sang Signed_vN + cập nhật pointer
+                    var tempPath = Path.GetTempFileName();
+                    var tempPdfOut = Path.ChangeExtension(tempPath, ".pdf");
+
+                    var signReq = new SignPdfRequest(
+                        EmpCode: di!.EmpCode,
+                        Pin: req.Pin!,
+                        CertName: di.CertName,
+                        Company: di.Company,
+                        Title: di.Title ?? "",
+                        Name: di.DisplayName ?? "",
+                        InputPdfPath: inputPdf,
+                        OutputPdfPath: tempPdfOut,
+                        SignType: 1,
+                        SignLocationType: 2,
+                        SearchPattern: t.VisiblePattern,
+                        Page: 1,
+                        PositionX: null,
+                        PositionY: null,
+                        BearerToken: null
+                    );
+
+                    var result = await _ssm.SignPdfAsync(signReq, ct);
+                    if (!result.Success)
+                    {
+                        _logger.LogWarning(
+                            "Ký SSM thất bại Task={TaskId} Dossier={DossierId} User={UserId} Error={Error}",
+                            t.Id, dossier.Id, req.ActorUserId, result.Error);
+
+                        await tx.RollbackAsync(ct);
+                        throw new InvalidOperationException(
+                            $"Ký số thất bại. Vui lòng kiểm tra chứng thư số hoặc thử lại. (Chi tiết: {result.Error})");
+                    }
+
+                    finalSignedPath = await _fileVersioning.SaveSignedVersionAsync(dossier.Id, tempPdfOut, ct);
+
+                    ev = new SignEvent
+                    {
+                        DossierId = dossier.Id,
+                        ActorUserId = req.ActorUserId,
+                        PdfPathIn = inputPdf,
+                        PdfPathOut = finalSignedPath,
+                        SignType = 1,
+                        SignLocationType = 2,
+                        SearchPattern = t.VisiblePattern,
+                        Success = true,
+                        Error = result.Error,
+                        CreatedAtUtc = DateTime.UtcNow
+                    };
+
+                    _db.SignEvents.Add(ev);
                 }
 
-                // 7) Gọi SSM thật
-                var signReq = new SignPdfRequest(
-                    EmpCode: di.EmpCode,
-                    Pin: req.Pin ?? string.Empty,
-                    CertName: di.CertName,
-                    Company: di.Company,
-                    Title: di.Title ?? string.Empty,
-                    Name: di.DisplayName ?? string.Empty,
-                    InputPdfPath: inputPdf,
-                    OutputPdfPath: outputPdf,
-                    SignType: 1,                      // 1 = ký hình ảnh (SSM)
-                    SignLocationType: signLocationType,
-                    SearchPattern: searchPattern,
-                    Page: page,
-                    PositionX: posX,
-                    PositionY: posY,
-                    BearerToken: null                 // có thể truyền token SSM nếu cần (_config["Ssm:StaticBearer"])
-                );
+                // Cập nhật trạng thái hồ sơ
+                bool pending = await _db.SignTasks
+                    .AnyAsync(x => x.DossierId == dossier.Id && x.Status == SignTaskStatus.Pending, ct);
 
-                var result = await _ssm.SignPdfAsync(signReq, ct);
+                dossier.Status = pending ? DossierStatus.InProgress : DossierStatus.Approved;
 
-                // 8) Ghi SignEvent
-                ev = new SignEvent
-                {
-                    DossierId = dossier.Id,
-                    ActorUserId = req.ActorUserId,
-                    PdfPathIn = inputPdf,
-                    PdfPathOut = outputPdf,
-                    SignType = signReq.SignType,
-                    SignLocationType = signReq.SignLocationType,
-                    SearchPattern = signReq.SearchPattern,
-                    Page = signReq.Page,
-                    PositionX = signReq.PositionX,
-                    PositionY = signReq.PositionY,
-                    VisibleSignatureName = t.VisiblePattern,
-                    Success = result.Success,
-                    Error = result.Error,
-                    CreatedAtUtc = DateTime.UtcNow
-                };
-                _db.Set<SignEvent>().Add(ev);
+                await _db.SaveChangesAsync(ct);
 
-                if (!result.Success)
-                {
-                    await _db.SaveChangesAsync(ct); // lưu event lỗi
-                    await tx.RollbackAsync(ct);
-                    throw new InvalidOperationException("Ký số thất bại: " + (result.Error ?? "unknown"));
-                }
+                // Kích hoạt bước kế tiếp
+                await _activation.RecomputeAsync(dossier.Id, ct);
 
-                finalPdfPath = outputPdf;
+                await tx.CommitAsync(ct);
             }
+            finally
+            {
+                locker.Release();
+            }
+        }
 
-            // 9) Cập nhật pointer current (dùng chung cho cả mock + SSM)
-            await WriteCurrentSignedAsync(dossier.Id, finalPdfPath, ct);
+        // ==========================================================
+        // REJECT
+        // ==========================================================
+        public async Task RejectAsync(RejectRequest req, CancellationToken ct = default)
+        {
+            var t = await _db.SignTasks
+                .Include(x => x.Dossier)
+                .FirstOrDefaultAsync(x => x.Id == req.TaskId, ct)
+                ?? throw new InvalidOperationException("Không tìm thấy task.");
 
-            // 10) Cập nhật trạng thái task & dossier
-            t.Status = SignTaskStatus.Approved;
+            if (!t.IsActivated || t.Status != SignTaskStatus.Pending)
+                throw new InvalidOperationException("Bước ký này chưa thể từ chối.");
+
+            if (!await IsActorAllowedForTaskAsync(t, req.ActorUserId, ct))
+                throw new UnauthorizedAccessException("Bạn không được phép từ chối bước này.");
+
+            t.Status = SignTaskStatus.Rejected;
             t.DecidedAt = DateTime.UtcNow;
             t.Comment = req.Comment;
 
-            var anyPending = await _db.SignTasks
-                .AnyAsync(x => x.DossierId == t.DossierId && x.Status == SignTaskStatus.Pending, ct);
-
-            t.Dossier!.Status = anyPending ? DossierStatus.InProgress : DossierStatus.Approved;
+            t.Dossier!.Status = DossierStatus.Rejected;
 
             await _db.SaveChangesAsync(ct);
-
-            // 11) Mở bước kế (SignActivationService)
             await _activation.RecomputeAsync(t.DossierId, ct);
-
-            await tx.CommitAsync(ct);
         }
-        finally
+
+        // ==========================================================
+        // CLERK CONFIRM
+        // ==========================================================
+        public async Task ClerkConfirmAsync(ClerkConfirmRequest req, CancellationToken ct = default)
         {
-            locker.Release();
+            var vt = await _db.SignTasks
+                .Include(t => t.Dossier)
+                .FirstOrDefaultAsync(t => t.DossierId == req.DossierId && t.SlotKey == SlotKey.VanThuCheck, ct)
+                ?? throw new InvalidOperationException("Không tìm thấy bước Văn thư.");
+
+            if (!vt.IsActivated)
+                throw new InvalidOperationException("Chưa đến bước Văn thư.");
+
+            if (!await IsActorAllowedForTaskAsync(vt, req.ActorUserId, ct))
+                throw new UnauthorizedAccessException("Bạn không phải người phụ trách bước này.");
+
+            vt.ClerkConfirmed = true;
+            vt.Status = SignTaskStatus.Approved;
+            vt.DecidedAt = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync(ct);
+            await _activation.RecomputeAsync(req.DossierId, ct);
         }
-    }
 
-    public async Task RejectAsync(RejectRequest req, CancellationToken ct = default)
-    {
-        var t = await _db.SignTasks.Include(x => x.Dossier).FirstOrDefaultAsync(x => x.Id == req.TaskId, ct)
-            ?? throw new InvalidOperationException("Task not found.");
-        if (!t.IsActivated || t.Status != SignTaskStatus.Pending) throw new InvalidOperationException("Not ready.");
-        if (t.AssigneeId != req.ActorUserId) throw new UnauthorizedAccessException();
+        // ==========================================================
+        // GET MY TASKS (simple list – backward compatible)
+        // ==========================================================
+        public async Task<IReadOnlyList<MyTaskItem>> GetMyTasksAsync(Guid userId, CancellationToken ct = default)
+        {
+            var now = DateTime.UtcNow;
 
-        t.Status = SignTaskStatus.Rejected;
-        t.DecidedAt = DateTime.UtcNow;
-        t.Comment = req.Comment;
-        t.Dossier!.Status = DossierStatus.Rejected;
+            // Task trực tiếp
+            var direct = _db.SignTasks.AsNoTracking()
+                .Where(t => t.AssigneeId == userId && t.IsActivated && t.Status == SignTaskStatus.Pending);
 
-        await _db.SaveChangesAsync(ct);
-        await _activation.RecomputeAsync(t.DossierId, ct);
-    }
+            // Task được ủy quyền
+            var delegated =
+                from t in _db.SignTasks.AsNoTracking()
+                join d in _db.UserDelegations.AsNoTracking()
+                    on t.AssigneeId equals d.FromUserId
+                where d.ToUserId == userId
+                      && d.IsActive
+                      && d.StartUtc <= now
+                      && (d.EndUtc == null || d.EndUtc >= now)
+                      && t.IsActivated
+                      && t.Status == SignTaskStatus.Pending
+                select t;
 
-    public async Task ClerkConfirmAsync(ClerkConfirmRequest req, CancellationToken ct = default)
-    {
-        var vt = await _db.SignTasks.FirstOrDefaultAsync(t => t.DossierId == req.DossierId && t.SlotKey == SlotKey.VanThuCheck, ct)
-            ?? throw new InvalidOperationException("Clerk slot not found.");
-        if (!vt.IsActivated) throw new InvalidOperationException("Not clerk step yet.");
+            return await direct
+                .Union(delegated)
+                .Select(t => new MyTaskItem(t.Id, t.DossierId, t.SlotKey, t.Order))
+                .ToListAsync(ct);
+        }
 
-        // *Lưu ý*: ở PHASE 1 bạn chưa check vt.AssigneeId == req.ActorUserId.
-        // Nếu muốn chặt chẽ, mở khoá dòng dưới:
-        // if (vt.AssigneeId != req.ActorUserId) throw new UnauthorizedAccessException();
+        // ==========================================================
+        // GET MY TASKS (GROUPED)
+        // ==========================================================
+        public async Task<MyTasksGroupedDto> GetMyTasksGroupedAsync(Guid userId, CancellationToken ct = default)
+        {
+            var now = DateTime.UtcNow;
 
-        vt.ClerkConfirmed = true;
-        vt.Status = SignTaskStatus.Approved;
-        vt.DecidedAt = DateTime.UtcNow;
+            // ========== 1) PENDING ==========
 
-        await _db.SaveChangesAsync(ct);
-        await _activation.RecomputeAsync(req.DossierId, ct);
-    }
+            var pendingDirect = _db.SignTasks
+                .Include(t => t.Dossier)
+                .Where(t =>
+                    t.AssigneeId == userId &&
+                    t.IsActivated &&
+                    t.Status == SignTaskStatus.Pending);
 
-    public async Task<IReadOnlyList<MyTaskItem>> GetMyTasksAsync(Guid userId, CancellationToken ct = default)
-    {
-        return await _db.SignTasks.AsNoTracking()
-            .Where(t => t.AssigneeId == userId && t.IsActivated && t.Status == SignTaskStatus.Pending)
-            .Select(t => new MyTaskItem(t.Id, t.DossierId, t.SlotKey, t.Order))
-            .ToListAsync(ct);
+            var pendingDelegated =
+                from t in _db.SignTasks.Include(x => x.Dossier)
+                join d in _db.UserDelegations
+                    on t.AssigneeId equals d.FromUserId
+                where d.ToUserId == userId
+                      && d.IsActive
+                      && d.StartUtc <= now
+                      && (d.EndUtc == null || d.EndUtc >= now)
+                      && t.IsActivated
+                      && t.Status == SignTaskStatus.Pending
+                select t;
+
+            var pendingQuery = pendingDirect.Union(pendingDelegated);
+
+            var pending = await pendingQuery
+                .AsNoTracking()
+                .OrderByDescending(t => t.Dossier!.CreatedAt)
+                .Select(t => new MyTaskListItem(
+                    t.Id,
+                    t.DossierId,
+                    t.Dossier!.Code,
+                    t.Dossier.Title,
+                    t.Dossier.Status,
+                    t.SlotKey,
+                    t.Order,
+                    t.Dossier.CreatedAt
+                ))
+                .ToListAsync(ct);
+
+            // ========== 2) PROCESSED ==========
+
+            var processed = await _db.SignTasks
+                .AsNoTracking()
+                .Include(t => t.Dossier)
+                .Where(t =>
+                    t.AssigneeId == userId &&
+                    (t.Status == SignTaskStatus.Approved || t.Status == SignTaskStatus.Rejected))
+                .OrderByDescending(t => t.DecidedAt ?? t.Dossier!.CreatedAt)
+                .Select(t => new MyTaskListItem(
+                    t.Id,
+                    t.DossierId,
+                    t.Dossier!.Code,
+                    t.Dossier.Title,
+                    t.Dossier.Status,
+                    t.SlotKey,
+                    t.Order,
+                    t.Dossier.CreatedAt
+                ))
+                .ToListAsync(ct);
+
+            // ========== 3) COMPLETED ==========
+
+            var completed = await _db.SignTasks
+                .AsNoTracking()
+                .Include(t => t.Dossier)
+                .Where(t =>
+                    t.AssigneeId == userId &&
+                    (t.Dossier!.Status == DossierStatus.Approved || t.Dossier.Status == DossierStatus.Rejected))
+                .OrderByDescending(t => t.Dossier!.CreatedAt)
+                .Select(t => new MyTaskListItem(
+                    t.Id,
+                    t.DossierId,
+                    t.Dossier!.Code,
+                    t.Dossier.Title,
+                    t.Dossier.Status,
+                    t.SlotKey,
+                    t.Order,
+                    t.Dossier.CreatedAt
+                ))
+                .ToListAsync(ct);
+
+            return new MyTasksGroupedDto(pending, processed, completed);
+        }
     }
 }
