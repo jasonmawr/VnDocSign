@@ -134,6 +134,8 @@ if (app.Environment.IsDevelopment())
 
 // Middleware order
 app.UseCors();
+// Add global exception handling
+app.UseMiddleware<VnDocSign.Api.Middlewares.ExceptionHandlingMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 

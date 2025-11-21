@@ -1,8 +1,9 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using VnDocSign.Application.Common;
 using VnDocSign.Application.Contracts.Dtos.Signing;
 using VnDocSign.Application.Contracts.Interfaces.Signing;
-
 
 namespace VnDocSign.Api.Controllers;
 
@@ -14,38 +15,80 @@ public sealed class SigningController : ControllerBase
     private readonly ISigningService _svc;
     public SigningController(ISigningService svc) => _svc = svc;
 
-    [HttpGet("my-tasks")]
-    public Task<IReadOnlyList<MyTaskItem>> MyTasks([FromQuery] Guid userId, CancellationToken ct)
-        => _svc.GetMyTasksAsync(userId, ct);
+    // Lấy userId từ JWT: ưu tiên claim "uid", fallback NameIdentifier
+    private Guid GetCurrentUserId()
+    {
+        var uidStr = User.FindFirst("uid")?.Value
+                     ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
 
+        if (!Guid.TryParse(uidStr, out var uid))
+            throw new UnauthorizedAccessException("Invalid or missing user id in token.");
+
+        return uid;
+    }
+
+    // === Danh sách task của chính user đang đăng nhập ===
+    [HttpGet("my-tasks")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<MyTaskItem>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> MyTasks(CancellationToken ct)
+    {
+        var userId = GetCurrentUserId();
+        var data = await _svc.GetMyTasksAsync(userId, ct);
+        return Ok(ApiResponse<IReadOnlyList<MyTaskItem>>.SuccessResponse(data));
+    }
+
+    // === Approve + ký (Mock hoặc SSM tùy Pin & cấu hình Ssm:Mode) ===
     [HttpPost("{taskId:guid}/approve")]
+    [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Approve(Guid taskId, [FromBody] ApproveBody body, CancellationToken ct)
     {
-        await _svc.ApproveAndSignAsync(new ApproveRequest(taskId, body.ActorUserId, body.Pin, body.Comment), ct);
-        return Ok();
+        var actorUserId = GetCurrentUserId();
+
+        await _svc.ApproveAndSignAsync(
+            new ApproveRequest(taskId, actorUserId, body.Pin ?? string.Empty, body.Comment),
+            ct);
+
+        return Ok(ApiResponse.SuccessResponse("Phê duyệt và ký thành công."));
     }
 
+    // === Reject task ===
     [HttpPost("{taskId:guid}/reject")]
+    [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Reject(Guid taskId, [FromBody] RejectBody body, CancellationToken ct)
     {
-        await _svc.RejectAsync(new RejectRequest(taskId, body.ActorUserId, body.Comment), ct);
-        return Ok();
+        var actorUserId = GetCurrentUserId();
+
+        await _svc.RejectAsync(
+            new RejectRequest(taskId, actorUserId, body.Comment),
+            ct);
+
+        return Ok(ApiResponse.SuccessResponse("Từ chối hồ sơ thành công."));
     }
 
+    // === Văn thư xác nhận (mở bước Giám đốc) ===
     [HttpPost("{dossierId:guid}/clerks/confirm")]
-    public async Task<IActionResult> ClerkConfirm(Guid dossierId, [FromBody] ClerkConfirmBody body, CancellationToken ct)
+    [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ClerkConfirm(Guid dossierId, CancellationToken ct)
     {
-        await _svc.ClerkConfirmAsync(new ClerkConfirmRequest(dossierId, body.ActorUserId), ct);
-        return Ok();
+        var actorUserId = GetCurrentUserId();
+
+        await _svc.ClerkConfirmAsync(
+            new ClerkConfirmRequest(dossierId, actorUserId),
+            ct);
+
+        return Ok(ApiResponse.SuccessResponse("Văn thư đã xác nhận, chuyển bước Giám đốc ký."));
     }
 
-    public sealed class ApproveBody
+    // === My tasks (grouped) ===
+    [HttpGet("my-tasks/grouped")]
+    [ProducesResponseType(typeof(ApiResponse<MyTasksGroupedDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMyTasksGrouped(CancellationToken ct)
     {
-        public Guid ActorUserId { get; set; }
-        public string? Pin { get; set; }
-        public string? Comment { get; set; }
-        public string SignMode { get; set; } = "mock";  // default mock
+        var actorUserId = GetCurrentUserId();
+        var data = await _svc.GetMyTasksGroupedAsync(actorUserId, ct);
+        return Ok(ApiResponse<MyTasksGroupedDto>.SuccessResponse(data));
     }
-    public sealed record RejectBody(Guid ActorUserId, string? Comment);
-    public sealed record ClerkConfirmBody(Guid ActorUserId);
+
+    // ====== Request bodies ======
+    public sealed record RejectBody(string? Comment);
 }

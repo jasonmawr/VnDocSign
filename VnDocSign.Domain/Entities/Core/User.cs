@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace VnDocSign.Domain.Entities.Core
+﻿namespace VnDocSign.Domain.Entities.Core
 {
     public sealed class User
     {
@@ -14,6 +8,10 @@ namespace VnDocSign.Domain.Entities.Core
         public string FullName { get; set; } = default!;
         public string Email { get; set; } = default!;
         public bool IsActive { get; set; } = true;
+
+        // ===== NEW: Employee code (mã nhân viên) =====
+        // Hiện tại cho phép null/empty, sau này HRM sẽ cập nhật.
+        public string? EmployeeCode { get; set; }
 
         public Guid DepartmentId { get; set; }
         public Department? Department { get; set; }

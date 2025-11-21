@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using VnDocSign.Application.Common;
 using VnDocSign.Application.Contracts.Dtos.Users;
 using VnDocSign.Application.Contracts.Interfaces.Users;
 
@@ -13,26 +14,48 @@ public sealed class UsersController : ControllerBase
     private readonly IUserService _svc;
     public UsersController(IUserService svc) => _svc = svc;
 
+    // GET ALL USERS
     [HttpGet]
+    [ProducesResponseType(typeof(ApiResponse<List<UserListItem>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(CancellationToken ct)
-        => Ok(await _svc.GetAllAsync(ct));
+    {
+        var data = await _svc.GetAllAsync(ct);
+        return Ok(ApiResponse.SuccessResponse(data));
+    }
 
+    // CREATE
     [HttpPost]
+    [ProducesResponseType(typeof(ApiResponse<UserCreateResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> Create([FromBody] UserCreateRequest req, CancellationToken ct)
-        => Ok(await _svc.CreateAsync(req, ct));
+    {
+        var data = await _svc.CreateAsync(req, ct);
+        return Ok(ApiResponse.SuccessResponse(data, "Tạo tài khoản thành công."));
+    }
 
-    // ===== NEW: xem roles của 1 user =====
+    // GET ROLES OF A USER
     [HttpGet("{userId:guid}/roles")]
-    public async Task<ActionResult<UserWithRolesDto>> GetRoles([FromRoute] Guid userId, CancellationToken ct)
-        => Ok(await _svc.GetWithRolesAsync(userId, ct));
+    [ProducesResponseType(typeof(ApiResponse<UserWithRolesDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetRoles(Guid userId, CancellationToken ct)
+    {
+        var data = await _svc.GetWithRolesAsync(userId, ct);
+        return Ok(ApiResponse.SuccessResponse(data));
+    }
 
-    // ===== NEW: gán roles cho 1 user =====
+    // ASSIGN ROLES
     [HttpPost("{userId:guid}/roles")]
-    public async Task<ActionResult<UserWithRolesDto>> AssignRoles([FromRoute] Guid userId, [FromBody] AssignRolesRequest req, CancellationToken ct)
-        => Ok(await _svc.AssignRolesAsync(userId, req, ct));
+    [ProducesResponseType(typeof(ApiResponse<UserWithRolesDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> AssignRoles(Guid userId, [FromBody] AssignRolesRequest req, CancellationToken ct)
+    {
+        var data = await _svc.AssignRolesAsync(userId, req, ct);
+        return Ok(ApiResponse.SuccessResponse(data, "Gán role thành công."));
+    }
 
-    // ===== NEW: bỏ 1 số roles khỏi user =====
+    // REMOVE ROLES
     [HttpDelete("{userId:guid}/roles")]
-    public async Task<ActionResult<UserWithRolesDto>> RemoveRoles([FromRoute] Guid userId, [FromBody] AssignRolesRequest req, CancellationToken ct)
-        => Ok(await _svc.RemoveRolesAsync(userId, req, ct));
+    [ProducesResponseType(typeof(ApiResponse<UserWithRolesDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RemoveRoles(Guid userId, [FromBody] AssignRolesRequest req, CancellationToken ct)
+    {
+        var data = await _svc.RemoveRolesAsync(userId, req, ct);
+        return Ok(ApiResponse.SuccessResponse(data, "Gỡ role thành công."));
+    }
 }

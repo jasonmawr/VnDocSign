@@ -285,6 +285,31 @@ public static class DbSeeder
         if (db.ChangeTracker.HasChanges()) await db.SaveChangesAsync();
     }
 
+    // ===== ENTRY POINT: Seed tất cả dữ liệu cần cho hệ thống =====
+    public static async Task SeedAllAsync(AppDbContext db, Func<string, string> hashPassword)
+    {
+        // 1) Đảm bảo DB đã migrate (tạo bảng / thêm cột mới)
+        await db.Database.MigrateAsync();
+
+        // 2) Seed phòng ban chuẩn (Departments)
+        await SeedDepartmentsAsync(db);
+
+        // 3) Seed Roles chuẩn (Admin, Văn thư, Trưởng phòng, PGĐ, GĐ,...)
+        await SeedRolesAsync(db);
+
+        // 4) Seed tài khoản Admin mặc định (username = admin, pwd lấy từ ENV hoặc "Admin@123")
+        await SeedAdminAsync(db, hashPassword);
+
+        // 5) Seed danh sách lãnh đạo (BGĐ, trưởng khoa/phòng, ... theo file bạn gửi)
+        await SeedLeadersAsync(db, hashPassword);
+
+        // 6) Seed bảng định nghĩa Slot ký (SignSlotDef)
+        await SeedSignSlotsAsync(db);
+
+        // 7) Seed SystemConfig (map SlotKey -> DepartmentId / UserId phù hợp)
+        await SeedSystemConfigAsync(db);
+    }
+
     // ===== Helpers =====
     private static async Task<Dictionary<string, Department>> BuildDeptIndexAsync(AppDbContext db)
     {

@@ -1,9 +1,11 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
-using System.Security.Claims;
+using VnDocSign.Application.Common;
 using VnDocSign.Application.Contracts.Interfaces.Signatures;
 using VnDocSign.Application.Contracts.Dtos.Signatures;
+
+namespace VnDocSign.Api.Controllers;
 
 [Authorize]
 [ApiController]
@@ -13,18 +15,21 @@ public sealed class SignaturesController : ControllerBase
     private readonly ISignatureService _svc;
     public SignaturesController(ISignatureService svc) => _svc = svc;
 
+    /// <summary>
+    /// Upload ảnh chữ ký tay (image) cho 1 user.
+    /// </summary>
     [HttpPost("{userId:guid}/upload")]
     [RequestSizeLimit(10_000_000)] // 10MB
     [Consumes("multipart/form-data")]
-    [ProducesResponseType(typeof(UploadSignatureResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<UploadSignatureResponse>> Upload(
+    [ProducesResponseType(typeof(ApiResponse<UploadSignatureResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Upload(
         Guid userId,
-        IFormFile file,                 // <-- KHÔNG dùng [FromForm] ở đây
+        IFormFile file,   // KHÔNG dùng [FromForm] ở đây
         CancellationToken ct)
     {
         if (file is null || file.Length == 0)
-            return BadRequest("Empty file.");
+            return BadRequest(ApiResponse.FailResponse("Empty file."));
 
         using var ms = new MemoryStream();
         await file.CopyToAsync(ms, ct);
@@ -37,13 +42,23 @@ public sealed class SignaturesController : ControllerBase
         );
 
         var res = await _svc.UploadAsync(req, ct);
-        return Ok(res);
+        return Ok(ApiResponse<UploadSignatureResponse>.SuccessResponse(
+            res,
+            "Upload chữ ký tay thành công."));
     }
 
+    /// <summary>
+    /// Lấy ảnh chữ ký tay của user (trả trực tiếp file image).
+    /// </summary>
     [HttpGet("{userId:guid}")]
+    [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(Guid userId, CancellationToken ct)
     {
         var res = await _svc.GetAsync(new GetSignatureQuery(userId), ct);
-        return res is null ? NotFound() : File(res.Data, res.ContentType, res.FileName);
+        if (res is null)
+            return NotFound(ApiResponse.FailResponse("Không tìm thấy chữ ký của người dùng."));
+
+        return File(res.Data, res.ContentType, res.FileName);
     }
 }
