@@ -117,7 +117,8 @@ public sealed class UserService : IUserService
                     UserId = userId,
                     RoleId = role.Id,
                     Username = user.Username,
-                    FullName = user.FullName
+                    FullName = user.FullName,
+                    RoleName = role.Name
                 });
             }
         }
