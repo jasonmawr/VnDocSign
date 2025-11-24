@@ -26,6 +26,7 @@ public sealed class AppDbContext : DbContext
     public DbSet<Template> Templates => Set<Template>();
     public DbSet<TemplateVersion> TemplateVersions => Set<TemplateVersion>();
     public DbSet<DossierContent> DossierContents => Set<DossierContent>();
+    public DbSet<UserDelegation> UserDelegations => Set<UserDelegation>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -208,6 +209,22 @@ public sealed class AppDbContext : DbContext
             e.HasOne(x => x.UpdatedBy)
                 .WithMany()
                 .HasForeignKey(x => x.UpdatedById)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        //DELEGATION
+        b.Entity<UserDelegation>(e =>
+        {
+            e.HasKey(x => x.Id);
+
+            e.HasOne(x => x.FromUser)
+                .WithMany()
+                .HasForeignKey(x => x.FromUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            e.HasOne(x => x.ToUser)
+                .WithMany()
+                .HasForeignKey(x => x.ToUserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
     }

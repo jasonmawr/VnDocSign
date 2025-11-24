@@ -1,14 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using VnDocSign.Application.Contracts.Dtos.Auth;
+﻿using VnDocSign.Application.Contracts.Dtos.Auth;
 
-namespace VnDocSign.Application.Contracts.Interfaces.Auth
+namespace VnDocSign.Application.Contracts.Interfaces.Auth;
+
+/// <summary>
+/// Service xử lý xác thực người dùng.
+/// </summary>
+public interface IAuthService
 {
-    public interface IAuthService
-    {
-        Task<LoginResponse> LoginAsync(LoginRequest req, CancellationToken ct = default);
-    }
+    /// <summary>
+    /// Đăng nhập và tạo JWT Token.
+    /// </summary>
+    Task<LoginResponse> LoginAsync(LoginRequest req, CancellationToken ct = default);
 }

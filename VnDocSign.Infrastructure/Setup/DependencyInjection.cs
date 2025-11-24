@@ -21,6 +21,7 @@ using VnDocSign.Infrastructure.Security;
 using VnDocSign.Infrastructure.Services;
 using VnDocSign.Infrastructure.Setup.Options;
 using VnDocSign.Application.Contracts.Interfaces.DigitalIdentities;
+using VnDocSign.Application.Contracts.Interfaces.Configs;
 
 namespace VnDocSign.Infrastructure.Setup
 {
@@ -101,6 +102,8 @@ namespace VnDocSign.Infrastructure.Setup
             services.AddScoped<ITemplateService, TemplateService>();
             services.AddScoped<IDossierContentService, DossierContentService>();
             services.AddScoped<IDigitalIdentityService, DigitalIdentityService>();
+            services.AddScoped<ISystemConfigService, SystemConfigService>();
+            services.AddScoped<IUserDelegationService, UserDelegationService>();
 
             // === Options binding ===
             services.Configure<FileStorageOptions>(config.GetSection("FileStorage"));

@@ -125,13 +125,29 @@ namespace VnDocSign.Infrastructure.Documents
             return new TemplateUploadResultDto(t.Id, ver.Id, ver.VersionNo, ver.FileNameDocx, ver.FileNamePdf, visible);
         }
 
-        public async Task ToggleActiveAsync(int id, CancellationToken ct = default)
+        public async Task<TemplateListItemDto> ToggleActiveAsync(int id, CancellationToken ct = default)
         {
-            var t = await _db.Templates.FirstOrDefaultAsync(x => x.Id == id, ct)
+            var t = await _db.Templates
+                .Include(x => x.Versions.OrderByDescending(v => v.VersionNo))
+                .FirstOrDefaultAsync(x => x.Id == id, ct)
                 ?? throw new InvalidOperationException("Template not found");
 
             t.IsActive = !t.IsActive;
             await _db.SaveChangesAsync(ct);
+
+            var latest = t.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
+
+            return new TemplateListItemDto(
+                t.Id,
+                t.Code,
+                t.Name,
+                t.IsActive,
+                latest?.Id,
+                latest?.VersionNo,
+                latest?.FileNameDocx,
+                latest?.FileNamePdf,
+                latest?.CreatedAt
+            );
         }
 
         public async Task DeleteVersionAsync(int versionId, CancellationToken ct = default)

@@ -7,7 +7,16 @@ using VnDocSign.Domain.Entities.Core;
 
 namespace VnDocSign.Domain.Entities.Dossiers
 {
-    public enum DossierStatus { Draft, Submitted, InProgress, Approved, Rejected }
+    // Thêm Archived ở cuối enum để không phá vỡ dữ liệu cũ
+    public enum DossierStatus
+    {
+        Draft,
+        Submitted,
+        InProgress,
+        Approved,
+        Rejected,
+        Archived
+    }
 
     public sealed class Dossier
     {

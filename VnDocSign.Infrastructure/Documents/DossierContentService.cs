@@ -89,8 +89,9 @@ namespace VnDocSign.Infrastructure.Documents
                 dc = new DossierContent
                 {
                     DossierId = dossierId,
-                    TemplateCode = req.TemplateCode,
-                    UpdatedById = userId
+                    TemplateCode = req.TemplateCode ?? string.Empty,
+                    UpdatedById = userId,
+                    UpdatedAt = DateTime.UtcNow
                 };
                 _db.DossierContents.Add(dc);
             }
@@ -98,9 +99,15 @@ namespace VnDocSign.Infrastructure.Documents
             {
                 current = JsonSerializer.Deserialize<Dictionary<string, string?>>(dc.DataJson)
                           ?? new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-                dc.TemplateCode = req.TemplateCode ?? dc.TemplateCode;
-                dc.UpdatedAt = DateTime.Now;
+
+                if (!string.IsNullOrWhiteSpace(req.TemplateCode) &&
+                    !string.Equals(dc.TemplateCode, req.TemplateCode, StringComparison.OrdinalIgnoreCase))
+                {
+                    dc.TemplateCode = req.TemplateCode;
+                }
+
                 dc.UpdatedById = userId;
+                dc.UpdatedAt = DateTime.UtcNow;
             }
 
             // 6) MERGE alias cũ với alias mới
@@ -117,7 +124,13 @@ namespace VnDocSign.Infrastructure.Documents
             if (!string.IsNullOrWhiteSpace(ngayLuuTruRaw))
             {
                 var s = ngayLuuTruRaw.Trim();
-                string[] formats = { "dd/MM/yyyy", "d/M/yyyy", "yyyy-MM-dd", "dd-MM-yyyy", "MM/dd/yyyy", "yyyyMMdd" };
+                string[] formats =
+                {
+                    "dd/MM/yyyy", "d/M/yyyy",
+                    "yyyy-MM-dd", "dd-MM-yyyy",
+                    "MM/dd/yyyy", "yyyyMMdd"
+                };
+
                 if (DateTime.TryParseExact(s, formats, CultureInfo.GetCultureInfo("vi-VN"),
                                            DateTimeStyles.None, out var d))
                     parsedDate = d.Date;
@@ -126,12 +139,23 @@ namespace VnDocSign.Infrastructure.Documents
             }
             dc.NgayLuuTru = parsedDate;
 
+            // 7.5) Nếu là Văn thư + GĐ đã ký cuối + đã nhập đủ số & ngày lưu
+            //      và phiếu đang ở trạng thái Approved -> chuyển sang Archived.
+            if (isClerk
+                && gdSignedFinal
+                && !string.IsNullOrWhiteSpace(dc.SoLuuTru)
+                && dc.NgayLuuTru.HasValue
+                && dossier.Status == DossierStatus.Approved)
+            {
+                dossier.Status = DossierStatus.Archived;
+            }
+
             // 8) Lưu JSON đã merge
             dc.DataJson = JsonSerializer.Serialize(current);
 
             await _db.SaveChangesAsync(ct);
 
-            // Trả lại những gì FE vừa gửi (aliasDict) để FE dễ phản hồi UI
+            // Trả lại toàn bộ alias hiện tại (đã merge) cho FE
             return new DossierContentDto(dc.TemplateCode, current);
         }
     }
