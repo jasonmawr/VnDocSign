@@ -58,4 +58,16 @@ public sealed class UsersController : ControllerBase
         var data = await _svc.RemoveRolesAsync(userId, req, ct);
         return Ok(ApiResponse.SuccessResponse(data, "Gỡ role thành công."));
     }
+
+    // UPDATE EMPLOYEE CODE
+    [HttpPut("{userId:guid}/employee-code")]
+    [ProducesResponseType(typeof(ApiResponse<UserWithRolesDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateEmployeeCode(
+        Guid userId,
+        [FromBody] UpdateEmployeeCodeRequest req,
+        CancellationToken ct)
+    {
+        var data = await _svc.UpdateEmployeeCodeAsync(userId, req, ct);
+        return Ok(ApiResponse.SuccessResponse(data, "Cập nhật mã nhân viên thành công."));
+    }
 }

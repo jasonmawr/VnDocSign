@@ -22,7 +22,10 @@ public sealed record UserListItem(
     string? EmployeeCode
 );
 
-public sealed record AssignRolesRequest(List<string> Roles);
+public sealed class AssignRolesRequest
+{
+    public List<string> Roles { get; set; } = new();
+}
 
 public sealed record UserWithRolesDto(
     Guid Id,
@@ -33,4 +36,8 @@ public sealed record UserWithRolesDto(
     Guid DepartmentId,
     string? EmployeeCode,
     IReadOnlyList<string> Roles
+);
+
+public sealed record UpdateEmployeeCodeRequest(
+    string? EmployeeCode
 );

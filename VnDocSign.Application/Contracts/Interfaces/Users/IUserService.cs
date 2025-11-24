@@ -9,4 +9,5 @@ public interface IUserService
     Task<UserWithRolesDto> GetWithRolesAsync(Guid userId, CancellationToken ct = default);
     Task<UserWithRolesDto> AssignRolesAsync(Guid userId, AssignRolesRequest req, CancellationToken ct = default);
     Task<UserWithRolesDto> RemoveRolesAsync(Guid userId, AssignRolesRequest req, CancellationToken ct = default);
+    Task<UserWithRolesDto> UpdateEmployeeCodeAsync(Guid userId,UpdateEmployeeCodeRequest req,CancellationToken ct = default);
 }
