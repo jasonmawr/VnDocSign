@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using DocumentFormat.OpenXml.Spreadsheet;
+using Microsoft.EntityFrameworkCore;
 using VnDocSign.Application.Contracts.Dtos.Users;
 using VnDocSign.Application.Contracts.Interfaces.Users;
 using VnDocSign.Domain.Entities.Core;
@@ -82,45 +83,61 @@ public sealed class UserService : IUserService
     // ASSIGN ROLES
     public async Task<UserWithRolesDto> AssignRolesAsync(Guid userId, AssignRolesRequest req, CancellationToken ct = default)
     {
+        // Normalize input: list of GUID strings
         var normalized = req.Roles
+            .Where(r => !string.IsNullOrWhiteSpace(r))
             .Select(r => r.Trim())
-            .Where(r => r != "")
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         if (normalized.Count == 0)
             return await GetWithRolesAsync(userId, ct);
 
+        // Load user để lấy Username, FullName
         var user = await _db.Users.FirstOrDefaultAsync(x => x.Id == userId, ct)
                    ?? throw new KeyNotFoundException("User not found.");
 
+        // Validate GUID format
+        var invalidGuids = normalized
+            .Where(x => !Guid.TryParse(x, out _))
+            .ToList();
+
+        if (invalidGuids.Any())
+            throw new InvalidOperationException($"Invalid RoleId format: {string.Join(", ", invalidGuids)}");
+
+        // Convert to Guid
+        var roleGuids = normalized
+            .Select(Guid.Parse)
+            .ToList();
+
+        // Load roles by ID
         var existingRoles = await _db.Roles
-            .Where(r => normalized.Contains(r.Name))
+            .Where(r => roleGuids.Contains(r.Id))
             .ToListAsync(ct);
 
-        var missing = normalized.Except(existingRoles.Select(r => r.Name), StringComparer.OrdinalIgnoreCase).ToList();
+        // Check missing RoleIds
+        var missingIds = roleGuids.Except(existingRoles.Select(r => r.Id)).ToList();
+        if (missingIds.Any())
+            throw new InvalidOperationException(
+                $"Role(s) not found: {string.Join(", ", missingIds)}"
+            );
 
-        foreach (var roleName in missing)
-            throw new InvalidOperationException($"Role '{roleName}' does not exist.");
+        // Clear old roles
+        _db.UserRoles.RemoveRange(
+            _db.UserRoles.Where(ur => ur.UserId == userId)
+        );
 
-        var existingRoleIds = await _db.UserRoles
-            .Where(x => x.UserId == userId)
-            .Select(x => x.RoleId)
-            .ToListAsync(ct);
-
+        // Assign new ones
         foreach (var role in existingRoles)
         {
-            if (!existingRoleIds.Contains(role.Id))
+            _db.UserRoles.Add(new UserRole
             {
-                _db.UserRoles.Add(new UserRole
-                {
-                    UserId = userId,
-                    RoleId = role.Id,
-                    Username = user.Username,
-                    FullName = user.FullName,
-                    RoleName = role.Name
-                });
-            }
+                UserId = userId,
+                RoleId = role.Id,
+                Username = user.Username,
+                FullName = user.FullName,
+                RoleName = role.Name   // lưu để quản lý nhìn cho dễ
+            });
         }
 
         await _db.SaveChangesAsync(ct);
@@ -130,17 +147,31 @@ public sealed class UserService : IUserService
     // REMOVE ROLES
     public async Task<UserWithRolesDto> RemoveRolesAsync(Guid userId, AssignRolesRequest req, CancellationToken ct = default)
     {
+        // Normalize input: GUID strings
         var normalized = req.Roles
+            .Where(r => !string.IsNullOrWhiteSpace(r))
             .Select(r => r.Trim())
-            .Where(r => r != "")
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         if (normalized.Count == 0)
             return await GetWithRolesAsync(userId, ct);
 
+        // Validate GUID format
+        var invalidGuids = normalized
+            .Where(x => !Guid.TryParse(x, out _))
+            .ToList();
+
+        if (invalidGuids.Any())
+            throw new InvalidOperationException($"Invalid RoleId format: {string.Join(", ", invalidGuids)}");
+
+        var roleGuids = normalized
+            .Select(Guid.Parse)
+            .ToList();
+
+        // Lấy các link user-role cần xoá theo RoleId
         var links = await _db.UserRoles
-            .Where(ur => ur.UserId == userId && normalized.Contains(ur.Role!.Name))
+            .Where(ur => ur.UserId == userId && roleGuids.Contains(ur.RoleId))
             .ToListAsync(ct);
 
         if (links.Any())
@@ -149,6 +180,27 @@ public sealed class UserService : IUserService
             await _db.SaveChangesAsync(ct);
         }
 
+        return await GetWithRolesAsync(userId, ct);
+    }
+
+    //EMPLOYEECODE
+    public async Task<UserWithRolesDto> UpdateEmployeeCodeAsync(
+    Guid userId,
+    UpdateEmployeeCodeRequest req,
+    CancellationToken ct = default)
+    {
+        var user = await _db.Users
+            .FirstOrDefaultAsync(x => x.Id == userId, ct)
+            ?? throw new KeyNotFoundException("User not found.");
+
+        // Chuẩn hóa: trim, cho phép null để xoá mã nếu cần
+        user.EmployeeCode = string.IsNullOrWhiteSpace(req.EmployeeCode)
+            ? null
+            : req.EmployeeCode.Trim();
+
+        await _db.SaveChangesAsync(ct);
+
+        // Trả về always dùng DTO chuẩn có roles
         return await GetWithRolesAsync(userId, ct);
     }
 }
